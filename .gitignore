@@ -115,3 +115,5 @@ temp/
 # Backup files
 *.bak
 *.backup 
+server/app/gen-lang-client-0292364306-98c0494cfe69.json
+server/app/.env
