@@ -216,7 +216,7 @@ async def chat(request: ChatRequest):
     # Start timing the entire request
     start_request_timing()
     
-    logger.info(f"🚀 Chat request started - User: {request.user_id}, Session: {request.session_id}, Message: '{request.new_message[:50]}...'")
+    logger.info(f"Chat request started - User: {request.user_id}, Session: {request.session_id}, Message: '{request.new_message[:50]}...'")
     
     if initialization_error:
         raise HTTPException(status_code=503, detail=f"Service unavailable: {initialization_error}")
@@ -236,33 +236,33 @@ async def chat(request: ChatRequest):
         with time_operation("session_management"):
             if session_id:
                 try:
-                    logger.info(f"🔍 Getting existing session: {session_id}")
+                    logger.info(f"Getting existing session: {session_id}")
                     session = await session_service.get_session(
                         app_name=APP_NAME, user_id=request.user_id, session_id=session_id
                     )
                     if not session:
                         raise HTTPException(status_code=404, detail="Session not found.")
-                    logger.info(f"✅ Retrieved existing session: {session.id}")
+                    logger.info(f"Retrieved existing session: {session.id}")
                 except Exception as e:
-                    logger.error(f"❌ Error getting session: {e}")
+                    logger.error(f"Error getting session: {e}")
                     # Create new session if getting fails
-                    logger.info("🔄 Creating new session due to error")
+                    logger.info("Creating new session due to error")
                     session = await session_service.create_session(
                         app_name=APP_NAME, user_id=request.user_id
                     )
-                    logger.info(f"✅ Created new session: {session.id}")
+                    logger.info(f"Created new session: {session.id}")
             else:
-                logger.info("🆕 Creating new session")
+                logger.info("Creating new session")
                 session = await session_service.create_session(
                     app_name=APP_NAME, user_id=request.user_id
                 )
-                logger.info(f"✅ Created new session: {session.id}")
+                logger.info(f"Created new session: {session.id}")
         
         session_id = session.id
         # Use the actual session variables, don't override them
         user_id = request.user_id
         
-        logger.info(f"📝 User Query: '{request.new_message}'")
+        logger.info(f"User Query: '{request.new_message}'")
         
         # Create runner
         with time_operation("runner_initialization"):
@@ -279,7 +279,7 @@ async def chat(request: ChatRequest):
             content = types.Content(role='user', parts=[types.Part(text=request.new_message)])
         
         # Run agent with timeout
-        logger.info("🤖 Running Fi agent...")
+        logger.info("Running Fi agent...")
         with time_operation("agent_execution"):
             events_async = runner.run_async(
                 session_id=session.id,
@@ -301,7 +301,7 @@ async def chat(request: ChatRequest):
         async def update_session_memory_background():
             """Background task to update session memory without blocking response."""
             try:
-                logger.info("💾 Background: Updating session memory...")
+                logger.info("Background: Updating session memory...")
                 # Re-enable when memory service is needed
                 # memory_service = vertex_ai_manager.get_memory_service()
                 # updated_session = await session_service.get_session(
@@ -309,10 +309,10 @@ async def chat(request: ChatRequest):
                 # )
                 # if updated_session:
                 #     await memory_service.add_session_to_memory(updated_session)
-                #     logger.info("✅ Background: Session memory updated")
-                logger.info("✅ Background: Session memory update skipped (memory service disabled)")
+                #     logger.info("Background: Session memory updated")
+                logger.info("Background: Session memory update skipped (memory service disabled)")
             except Exception as e:
-                logger.error(f"❌ Background: Error updating session memory: {e}")
+                logger.error(f"Background: Error updating session memory: {e}")
         
         # Start background task but don't wait for it
         asyncio.create_task(update_session_memory_background())
