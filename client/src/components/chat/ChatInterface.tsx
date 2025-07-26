@@ -45,20 +45,18 @@ export default function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  // Load session ID from localStorage on component mount
+  // Clear session on page load to start fresh each time
   useEffect(() => {
-    const savedSessionId = localStorage.getItem('coagentics_session_id')
-    if (savedSessionId && !sessionId) {
-      setSessionId(savedSessionId)
-      console.log('Restored session ID from localStorage:', savedSessionId)
-    }
+    localStorage.removeItem('coagentics_session_id')
+    setSessionId(null)
+    console.log('🆕 Starting fresh session - cleared any existing session data')
   }, [])
 
-  // Save session ID to localStorage when it changes
+  // Save session ID to localStorage when it changes (but only for same-session continuity)
   useEffect(() => {
     if (sessionId) {
       localStorage.setItem('coagentics_session_id', sessionId)
-      console.log('Saved session ID to localStorage:', sessionId)
+      console.log('💾 Saved session ID for same-session continuity:', sessionId)
     }
   }, [sessionId])
 
@@ -139,13 +137,12 @@ export default function ChatInterface() {
     } catch (error: any) {
       console.error('Chat error:', error)
       
-      // Provide specific error messages based on the API version
-      let errorContent = "I apologize, but I'm having trouble connecting to the AI service. Please try again in a moment."
+      let errorContent = "I'm sorry, I encountered an error while processing your request. Please try again."
       
-      if (apiVersion === 'v2' && error?.response?.status === 503) {
-        errorContent = "The advanced financial advisor (v2) is currently unavailable. Please try switching to v1 or demo mode."
-      } else if (apiVersion !== 'demo' && error?.response?.status === 401) {
-        errorContent = "Authentication required. Please try using demo mode for now."
+      if (error.response?.status === 503) {
+        errorContent = "The AI service is currently unavailable. Please try again in a moment."
+      } else if (error.response?.status === 429) {
+        errorContent = "Too many requests. Please wait a moment before trying again."
       }
       
       const errorMessage: Message = {
@@ -218,60 +215,35 @@ export default function ChatInterface() {
         {/* Settings Panel */}
         {showSettings && (
           <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-            <h3 className="text-sm font-medium text-gray-900 mb-3">AI Assistant Version</h3>
+            <h3 className="font-medium text-gray-900 mb-3">API Version</h3>
             <div className="space-y-2">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="apiVersion"
-                  value="v2"
-                  checked={apiVersion === 'v2'}
-                  onChange={(e) => setApiVersion(e.target.value as 'v1' | 'v2' | 'demo')}
-                  className="mr-2"
-                />
-                <span className="text-sm">
-                  <strong>V2 - Advanced Financial Advisor</strong>
-                  <br />
-                  <span className="text-gray-600">Multi-agent system with specialized financial planning (requires auth)</span>
-                </span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="apiVersion"
-                  value="v1"
-                  checked={apiVersion === 'v1'}
-                  onChange={(e) => setApiVersion(e.target.value as 'v1' | 'v2' | 'demo')}
-                  className="mr-2"
-                />
-                <span className="text-sm">
-                  <strong>V1 - Standard Assistant</strong>
-                  <br />
-                  <span className="text-gray-600">Original agent system with basic financial capabilities (requires auth)</span>
-                </span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="apiVersion"
-                  value="demo"
-                  checked={apiVersion === 'demo'}
-                  onChange={(e) => setApiVersion(e.target.value as 'v1' | 'v2' | 'demo')}
-                  className="mr-2"
-                />
-                <span className="text-sm">
-                  <strong>Demo Mode</strong>
-                  <br />
-                  <span className="text-gray-600">Basic functionality without authentication required</span>
-                </span>
-              </label>
+              {[
+                { id: 'v2', name: 'V2 - Financial Assistant (Recommended)', desc: 'Google ADK-based financial advisor' },
+                { id: 'v1', name: 'V1 - Multi-Agent System', desc: 'Original agent orchestration system' },
+                { id: 'demo', name: 'Demo - Quick Chat', desc: 'Simple demo endpoint (no auth)' }
+              ].map((version) => (
+                <label key={version.id} className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="apiVersion"
+                    value={version.id}
+                    checked={apiVersion === version.id}
+                    onChange={(e) => setApiVersion(e.target.value as any)}
+                    className="mt-1"
+                  />
+                  <div>
+                    <div className="font-medium text-gray-900">{version.name}</div>
+                    <div className="text-sm text-gray-600">{version.desc}</div>
+                  </div>
+                </label>
+              ))}
             </div>
           </div>
         )}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
@@ -281,7 +253,7 @@ export default function ChatInterface() {
 
       {/* Input */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
-        <div className="flex items-end gap-3">
+        <div className="flex gap-3">
           <div className="flex-1 relative">
             <textarea
               ref={inputRef}
@@ -289,28 +261,19 @@ export default function ChatInterface() {
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Ask me about investments, retirement planning, or any financial topic..."
-              className="w-full text-black px-4 py-3 pr-12 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[50px] max-h-32"
+              className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               rows={1}
-              style={{
-                height: 'auto',
-                minHeight: '50px',
-                maxHeight: '128px'
-              }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement
-                target.style.height = 'auto'
-                target.style.height = Math.min(target.scrollHeight, 128) + 'px'
-              }}
+              style={{ minHeight: '52px', maxHeight: '120px' }}
             />
           </div>
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
             className={cn(
-              "flex items-center justify-center w-12 h-12 rounded-lg transition-colors",
-              input.trim() && !isLoading
-                ? "bg-blue-600 hover:bg-blue-700 text-white"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              "px-4 py-3 rounded-lg font-medium transition-colors",
+              !input.trim() || isLoading
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-blue-600 text-white hover:bg-blue-700"
             )}
           >
             {isLoading ? (
@@ -319,9 +282,6 @@ export default function ChatInterface() {
               <Send className="w-5 h-5" />
             )}
           </button>
-        </div>
-        <div className="mt-2 text-xs text-gray-500 text-center">
-          Press Enter to send, Shift+Enter for new line
         </div>
       </div>
     </div>

@@ -228,7 +228,7 @@ async def chat(request: ChatRequest):
         # Use vertex AI manager services
         with time_operation("vertex_ai_service_initialization"):
             session_service = vertex_ai_manager.get_session_service()
-            memory_service = vertex_ai_manager.get_memory_service()
+            # memory_service = vertex_ai_manager.get_memory_service()  # Commented out for performance
         
         session_id = request.session_id
         
@@ -271,7 +271,7 @@ async def chat(request: ChatRequest):
                 agent=fi_agent,
                 artifact_service=artifacts_service,
                 session_service=session_service,
-                memory_service=memory_service,
+                # memory_service=memory_service,  # Commented out for performance
             )
         
         # Prepare user message
@@ -297,19 +297,25 @@ async def chat(request: ChatRequest):
             if not response_text:
                 response_text = "I apologize, but I couldn't generate a response at this time."
         
-        # Update session in memory
-        with time_operation("memory_update"):
+        # Update session in memory (background task - don't wait for it)
+        async def update_session_memory_background():
+            """Background task to update session memory without blocking response."""
             try:
-                logger.info("💾 Updating session memory...")
-                updated_session = await session_service.get_session(
-                    app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-                )
-                if updated_session:
-                    await memory_service.add_session_to_memory(updated_session)
-                    logger.info("✅ Session memory updated")
+                logger.info("💾 Background: Updating session memory...")
+                # Re-enable when memory service is needed
+                # memory_service = vertex_ai_manager.get_memory_service()
+                # updated_session = await session_service.get_session(
+                #     app_name=APP_NAME, user_id=request.user_id, session_id=session_id
+                # )
+                # if updated_session:
+                #     await memory_service.add_session_to_memory(updated_session)
+                #     logger.info("✅ Background: Session memory updated")
+                logger.info("✅ Background: Session memory update skipped (memory service disabled)")
             except Exception as e:
-                logger.error(f"❌ Error updating session memory: {e}")
-                # Continue anyway
+                logger.error(f"❌ Background: Error updating session memory: {e}")
+        
+        # Start background task but don't wait for it
+        asyncio.create_task(update_session_memory_background())
         
         # Get timing summary
         timing_info = log_timing_summary()
