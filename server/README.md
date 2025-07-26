@@ -70,9 +70,9 @@ CoAgentics implements a multi-agent architecture designed for financial AI appli
 
 Once running, access the interactive API documentation:
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **API Info**: http://localhost:8000/api/info
+- **Swagger UI**: http://localhost:8002/docs
+- **ReDoc**: http://localhost:8002/redoc
+- **API Info**: http://localhost:8002/api/info
 
 ## 🎯 Key Features
 
@@ -124,7 +124,7 @@ The system supports various financial calculations:
 
 ```bash
 # Calculate compound interest
-curl -X POST "http://localhost:8000/api/v1/tools/calculate/compound-interest" \
+curl -X POST "http://localhost:8002/api/v1/tools/calculate/compound-interest" \
   -H "Content-Type: application/json" \
   -d '{
     "principal": 10000,
@@ -134,7 +134,7 @@ curl -X POST "http://localhost:8000/api/v1/tools/calculate/compound-interest" \
   }'
 
 # Get retirement savings projection
-curl -X POST "http://localhost:8000/api/v1/tools/calculate/retirement" \
+curl -X POST "http://localhost:8002/api/v1/tools/calculate/retirement" \
   -H "Content-Type: application/json" \
   -d '{
     "current_age": 30,
@@ -209,7 +209,7 @@ Try the system without authentication:
 
 ```bash
 # Quick demo chat
-curl -X POST "http://localhost:8000/demo/quick-chat?message=What%20is%20compound%20interest"
+curl -X POST "http://localhost:8002/demo/quick-chat?message=What%20is%20compound%20interest"
 ```
 
 ## 🔒 Authentication
@@ -225,12 +225,12 @@ The system supports JWT-based authentication. For production deployment:
 
 ### Health Check
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8002/health
 ```
 
 ### Agent Status
 ```bash
-curl http://localhost:8000/agents/status
+curl http://localhost:8002/agents/status
 ```
 
 ## 🌐 Production Deployment
