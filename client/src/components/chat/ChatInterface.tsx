@@ -15,6 +15,7 @@ interface Message {
   timestamp: Date
   agent?: string
   metadata?: any
+  timing_info?: any
 }
 
 export default function ChatInterface() {
@@ -108,6 +109,10 @@ export default function ChatInterface() {
             console.log('Received new session ID:', response.session_id)
             setSessionId(response.session_id)
           }
+          // Log timing information
+          if (response.timing_info) {
+            console.log('⏱️ Backend Timing:', response.timing_info)
+          }
           break
         case 'v1':
           // Use v1 endpoint (original agent system)
@@ -126,7 +131,8 @@ export default function ChatInterface() {
         role: 'assistant',
         timestamp: new Date(),
         agent: response.agent_used,
-        metadata: response.metadata
+        metadata: response.metadata,
+        timing_info: response.timing_info
       }
 
       setMessages(prev => [...prev, assistantMessage])
