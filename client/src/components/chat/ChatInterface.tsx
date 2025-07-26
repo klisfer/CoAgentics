@@ -44,6 +44,23 @@ export default function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
+  // Load session ID from localStorage on component mount
+  useEffect(() => {
+    const savedSessionId = localStorage.getItem('coagentics_session_id')
+    if (savedSessionId && !sessionId) {
+      setSessionId(savedSessionId)
+      console.log('Restored session ID from localStorage:', savedSessionId)
+    }
+  }, [])
+
+  // Save session ID to localStorage when it changes
+  useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem('coagentics_session_id', sessionId)
+      console.log('Saved session ID to localStorage:', sessionId)
+    }
+  }, [sessionId])
+
   // Clear chat and start new session
   const clearChat = () => {
     setMessages([
@@ -56,6 +73,7 @@ export default function ChatInterface() {
       }
     ])
     setSessionId(null) // Reset session ID to start fresh
+    localStorage.removeItem('coagentics_session_id') // Clear from localStorage
   }
 
   const handleSend = async () => {
