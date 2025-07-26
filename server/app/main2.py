@@ -52,13 +52,16 @@ fi_agent = None
 fi_toolset = None
 initialization_error = None
 
+# Global in-memory session service instance (to persist across requests)
+global_inmemory_session_service = None
+
 APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT", "fi_mcp_app")
 
 
 class ChatRequest(BaseModel):
     user_id: str
     session_id: Optional[str] = None
-    new_message: str = Field(..., description="The user's message text.")  # Fixed: was new_message
+    user_message: str = Field(..., description="The user's message text.")
 
 class ChatResponse(BaseModel):
     session_id: str
@@ -216,7 +219,7 @@ async def chat(request: ChatRequest):
     # Start timing the entire request
     start_request_timing()
     
-    logger.info(f"Chat request started - User: {request.user_id}, Session: {request.session_id}, Message: '{request.new_message[:50]}...'")
+    logger.info(f"Chat request started - User: {request.user_id}, Session: {request.session_id}, Message: '{request.user_message[:50]}...'")
     
     if initialization_error:
         raise HTTPException(status_code=503, detail=f"Service unavailable: {initialization_error}")
@@ -227,42 +230,90 @@ async def chat(request: ChatRequest):
     try:
         # Use vertex AI manager services
         with time_operation("vertex_ai_service_initialization"):
-            session_service = vertex_ai_manager.get_session_service()
-            # memory_service = vertex_ai_manager.get_memory_service()  # Commented out for performance
+            try:
+                session_service = vertex_ai_manager.get_session_service()
+                # memory_service = vertex_ai_manager.get_memory_service()  # Commented out for performance
+            except RuntimeError as e:
+                if "not initialized" in str(e):
+                    logger.warning("Vertex AI Manager not initialized, falling back to in-memory session service")
+                    # Fall back to global in-memory session service (shared across requests)
+                    global global_inmemory_session_service
+                    if global_inmemory_session_service is None:
+                        global_inmemory_session_service = InMemorySessionService()
+                        logger.info("Created global in-memory session service")
+                    session_service = global_inmemory_session_service
+                else:
+                    raise
         
         session_id = request.session_id
         
-        # Get or create session
+        # Get or create session (handle both Vertex AI and in-memory sessions)
         with time_operation("session_management"):
-            if session_id:
+            is_inmemory_session = isinstance(session_service, InMemorySessionService)
+            
+            if session_id and not is_inmemory_session:
+                # Vertex AI session service - use existing session retrieval
                 try:
-                    logger.info(f"Getting existing session: {session_id}")
+                    logger.info(f"🔍 Getting existing Vertex AI session: {session_id}")
                     session = await session_service.get_session(
                         app_name=APP_NAME, user_id=request.user_id, session_id=session_id
                     )
                     if not session:
-                        raise HTTPException(status_code=404, detail="Session not found.")
-                    logger.info(f"Retrieved existing session: {session.id}")
+                        logger.info("🔄 Session not found, creating new Vertex AI session")
+                        session = await session_service.create_session(
+                            app_name=APP_NAME, user_id=request.user_id
+                        )
+                    logger.info(f"✅ Using Vertex AI session: {session.id}")
                 except Exception as e:
-                    logger.error(f"Error getting session: {e}")
+                    logger.error(f"❌ Error with Vertex AI session: {e}")
                     # Create new session if getting fails
-                    logger.info("Creating new session due to error")
+                    logger.info("🔄 Creating new Vertex AI session due to error")
                     session = await session_service.create_session(
                         app_name=APP_NAME, user_id=request.user_id
                     )
-                    logger.info(f"Created new session: {session.id}")
+                    logger.info(f"✅ Created new Vertex AI session: {session.id}")
+            elif session_id and is_inmemory_session:
+                # In-memory session service - use its built-in session management
+                try:
+                    logger.info(f"🔍 Looking for existing in-memory session: {session_id}")
+                    
+                    # Try to get existing session using the service's built-in method
+                    session = await session_service.get_session(session_id=session_id)
+                    if session:
+                        logger.info(f"✅ Retrieved existing in-memory session: {session.id}")
+                    else:
+                        logger.info("🔄 In-memory session not found, creating new one")
+                        session = await session_service.create_session(
+                            app_name=APP_NAME, user_id=request.user_id
+                        )
+                        logger.info(f"✅ Created new in-memory session: {session.id}")
+                except Exception as e:
+                    logger.error(f"❌ Error with in-memory session: {e}")
+                    logger.info("🔄 Creating new in-memory session due to error")
+                    session = await session_service.create_session(
+                        app_name=APP_NAME, user_id=request.user_id
+                    )
+                    logger.info(f"✅ Created new in-memory session: {session.id}")
             else:
-                logger.info("Creating new session")
-                session = await session_service.create_session(
-                    app_name=APP_NAME, user_id=request.user_id
-                )
-                logger.info(f"Created new session: {session.id}")
+                # No session_id provided or first request
+                if is_inmemory_session:
+                    logger.info("🆕 Creating new in-memory session")
+                    session = await session_service.create_session(
+                        app_name=APP_NAME, user_id=request.user_id
+                    )
+                    logger.info(f"✅ Created new in-memory session: {session.id}")
+                else:
+                    logger.info("🆕 Creating new Vertex AI session")
+                    session = await session_service.create_session(
+                        app_name=APP_NAME, user_id=request.user_id
+                    )
+                    logger.info(f"✅ Created new Vertex AI session: {session.id}")
         
         session_id = session.id
         # Use the actual session variables, don't override them
         user_id = request.user_id
         
-        logger.info(f"User Query: '{request.new_message}'")
+        logger.info(f"User Query: '{request.user_message}'")
         
         # Create runner
         with time_operation("runner_initialization"):
@@ -276,7 +327,7 @@ async def chat(request: ChatRequest):
         
         # Prepare user message
         with time_operation("message_preparation"):
-            content = types.Content(role='user', parts=[types.Part(text=request.new_message)])
+            content = types.Content(role='user', parts=[types.Part(text=request.user_message)])
         
         # Run agent with timeout
         logger.info("Running Fi agent...")

@@ -86,7 +86,7 @@ export const chatAPI = {
     const response = await axios.post(url, {
       user_id: message.user_id,
       session_id: message.session_id || null,
-      new_message: message.message
+      user_message: message.message
     }, {
       headers: {
         'Content-Type': 'application/json',
