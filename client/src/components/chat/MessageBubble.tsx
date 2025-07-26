@@ -1,6 +1,7 @@
 'use client'
 
-import { Bot, User, Clock, Zap } from 'lucide-react'
+import { useState } from 'react'
+import { Bot, User, Clock, Zap, Info } from 'lucide-react'
 import { cn, formatTime } from '@/lib/utils'
 
 interface Message {
@@ -10,6 +11,7 @@ interface Message {
   timestamp: Date
   agent?: string
   metadata?: any
+  timing_info?: any
 }
 
 interface MessageBubbleProps {
@@ -19,6 +21,7 @@ interface MessageBubbleProps {
 export default function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const isError = message.agent === 'error'
+  const [showInfo, setShowInfo] = useState(false)
 
   const formatContent = (content: string) => {
     // URL regex pattern
@@ -161,7 +164,71 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
               </div>
             </>
           )}
+          
+          {/* Info button for additional details */}
+          {(!isUser && (message.timing_info || message.metadata)) && (
+            <>
+              <span>•</span>
+              <button
+                onClick={() => setShowInfo(!showInfo)}
+                className="flex items-center gap-1 hover:text-gray-700 transition-colors p-0.5 rounded hover:bg-gray-100"
+                title="Show message details"
+              >
+                <Info className="w-3 h-3" />
+              </button>
+            </>
+          )}
         </div>
+        
+        {/* Message Details Panel */}
+        {showInfo && (message.timing_info || message.metadata) && (
+                      <div className="mt-2 p-3 bg-gray-50 rounded-lg border text-xs">
+              <div className="font-medium text-gray-700 mb-2">Message Details</div>
+              <div className="space-y-2">
+                
+                {/* Timing Information */}
+                {message.timing_info && (
+                  <div>
+                    <div className="font-medium text-gray-600 mb-1">Performance Breakdown:</div>
+                    <div className="space-y-1 ml-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Total Time:</span>
+                        <span className="font-mono">{message.timing_info.total_time}s</span>
+                      </div>
+                      {message.timing_info.operations && Object.entries(message.timing_info.operations).map(([operation, time]) => (
+                        <div key={operation} className="flex justify-between">
+                          <span className="text-gray-600 capitalize">{operation.replace(/_/g, ' ')}:</span>
+                          <span className="font-mono">{time as number}s</span>
+                        </div>
+                      ))}
+                      {message.timing_info.unaccounted_time > 0 && (
+                        <div className="flex justify-between text-gray-500">
+                          <span>Unaccounted Time:</span>
+                          <span className="font-mono">{message.timing_info.unaccounted_time}s</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Additional Metadata */}
+                {message.metadata && Object.keys(message.metadata).length > 0 && (
+                  <div>
+                    <div className="font-medium text-gray-600 mb-1">Additional Info:</div>
+                    <div className="space-y-1 ml-2">
+                      {Object.entries(message.metadata).map(([key, value]) => (
+                        <div key={key} className="flex justify-between">
+                          <span className="text-gray-600 capitalize">{key.replace(/_/g, ' ')}:</span>
+                          <span className="font-mono">{String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+              </div>
+            </div>
+        )}
       </div>
     </div>
   )
