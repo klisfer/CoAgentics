@@ -21,7 +21,40 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
   const isError = message.agent === 'error'
 
   const formatContent = (content: string) => {
-    // Simple markdown-like formatting
+    // URL regex pattern
+    const urlRegex = /(https?:\/\/[^\s]+)/g
+    
+    // Function to convert URLs to clickable links
+    const linkifyText = (text: string) => {
+      const parts = text.split(urlRegex)
+      return parts.map((part, i) => {
+        if (urlRegex.test(part)) {
+          return (
+            <a
+              key={i}
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline break-all font-medium hover:bg-blue-50 px-1 py-0.5 rounded transition-colors"
+              onClick={(e) => {
+                // Log the click and show a helpful message
+                console.log('User clicked link:', part)
+                
+                // Optional: Show a toast notification
+                if (part.includes('localhost:8080')) {
+                  console.log('Opening login page - your chat session will be preserved when you return!')
+                }
+              }}
+            >
+              {part}
+            </a>
+          )
+        }
+        return part
+      })
+    }
+    
+    // Simple markdown-like formatting with URL detection
     return content
       .split('\n')
       .map((line, index) => {
@@ -31,7 +64,7 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           return (
             <p key={index} className="mb-2">
               {parts.map((part, i) => 
-                i % 2 === 1 ? <strong key={i}>{part}</strong> : part
+                i % 2 === 1 ? <strong key={i}>{linkifyText(part)}</strong> : linkifyText(part)
               )}
             </p>
           )
@@ -41,14 +74,14 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
         if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
           return (
             <li key={index} className="ml-4">
-              {line.trim().replace(/^[•-]\s*/, '')}
+              {linkifyText(line.trim().replace(/^[•-]\s*/, ''))}
             </li>
           )
         }
         
         // Regular paragraph
         if (line.trim()) {
-          return <p key={index} className="mb-2">{line}</p>
+          return <p key={index} className="mb-2">{linkifyText(line)}</p>
         }
         
         return <br key={index} />
