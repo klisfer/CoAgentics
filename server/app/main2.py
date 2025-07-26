@@ -38,7 +38,7 @@ from services.context.vertex_ai_session_manager import vertex_ai_manager, Vertex
 from google.adk.runners import Runner
 
 
-MODEL = "gemini-2.5-pro"
+MODEL = "gemini-2.5-flash"
 
 # --- Configuration ---
 load_dotenv()
@@ -86,14 +86,14 @@ async def get_agent_async():
         )
         
         # Get tools from the toolset with timeout
-        # try:
-        #     # Add a timeout to prevent hanging
-        #     tools = await asyncio.wait_for(toolset.get_tools(), timeout=10.0)
-        #     logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
-        #     logger.info(f"Successfully fetched {toolset} toolset from Fi MCP server.")
-        # except asyncio.TimeoutError:
-        #     logger.error("Timeout while fetching tools from MCP server")
-        #     raise Exception("MCP server connection timeout")
+        try:
+            # Add a timeout to prevent hanging
+            tools = await asyncio.wait_for(toolset.get_tools(), timeout=10.0)
+            logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
+            logger.info(f"Successfully fetched {toolset} toolset from Fi MCP server.")
+        except asyncio.TimeoutError:
+            logger.error("Timeout while fetching tools from MCP server")
+            raise Exception("MCP server connection timeout")
         
         financial_coordinator = LlmAgent(
             name="master_financial_planner",
