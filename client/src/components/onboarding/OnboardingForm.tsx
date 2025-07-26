@@ -119,7 +119,8 @@ export default function OnboardingForm() {
 
     setLoading(true);
     try {
-      const profile: Omit<UserProfile, 'createdAt' | 'updatedAt'> = {
+      // Create base profile object
+      const baseProfile = {
         uid: currentUser.uid,
         email: currentUser.email || '',
         name: formData.name,
@@ -127,13 +128,26 @@ export default function OnboardingForm() {
         gender: formData.gender,
         maritalStatus: formData.maritalStatus,
         employmentStatus: formData.employmentStatus,
-        industryType: formData.employmentStatus === 'salaried' ? formData.industryType : undefined,
         dependents: formData.dependents,
-        kidsCount: formData.dependents.kids ? formData.kidsCount : undefined,
         location: formData.location,
         insurance: formData.insurance,
         profileCompleted: true,
       };
+
+      // Add conditional fields only if they have valid values
+      const profile: Omit<UserProfile, 'createdAt' | 'updatedAt'> = {
+        ...baseProfile,
+        ...(formData.employmentStatus === 'salaried' && formData.industryType && {
+          industryType: formData.industryType
+        }),
+        ...(formData.dependents.kids && formData.kidsCount > 0 && {
+          kidsCount: formData.kidsCount
+        }),
+      };
+
+      console.log('Profile before saving:', profile);
+      console.log('Form data dependents.kids:', formData.dependents.kids);
+      console.log('Form data kidsCount:', formData.kidsCount);
 
       await FirestoreService.createUserProfile(profile);
       

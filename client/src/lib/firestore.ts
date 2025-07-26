@@ -41,6 +41,19 @@ export interface UserProfile {
 
 const USERS_COLLECTION = 'users';
 
+// Helper function to remove undefined values from objects
+function removeUndefinedValues(obj: any): any {
+  const cleaned: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      cleaned[key] = value;
+    } else {
+      console.log(`Removing undefined field: ${key}`);
+    }
+  }
+  return cleaned;
+}
+
 export class FirestoreService {
   // Check if user profile exists
   static async getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -69,11 +82,18 @@ export class FirestoreService {
       const userDoc = doc(db, USERS_COLLECTION, profile.uid);
       const now = new Date();
       
-      await setDoc(userDoc, {
+      // Remove any undefined values before saving to Firestore
+      const profileWithTimestamps = {
         ...profile,
         createdAt: now,
         updatedAt: now,
-      });
+      };
+      
+      console.log('Profile before cleaning:', profileWithTimestamps);
+      const cleanedProfile = removeUndefinedValues(profileWithTimestamps);
+      console.log('Profile after cleaning:', cleanedProfile);
+      
+      await setDoc(userDoc, cleanedProfile);
     } catch (error) {
       console.error('Error creating user profile:', error);
       throw error;
