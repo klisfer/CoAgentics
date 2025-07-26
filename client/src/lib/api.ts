@@ -82,13 +82,16 @@ export const chatAPI = {
   },
 
   // Send message to AI agents (v2 - main2.py Financial Assistant)
-  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any, requires_auth?: boolean, auth_url?: string, auth_message?: string }> => {
+  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string, user_profile?: any }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any, requires_auth?: boolean, auth_url?: string, auth_message?: string }> => {
     const url = `${API_BASE_URL_V2}/chat`;
     console.log('Making API call to:', url);
+    console.log('User profile being sent:', message.user_profile);
+    
     const response = await axios.post(url, {
       user_id: message.user_id,
       session_id: message.session_id || null,
-      user_message: message.message
+      user_message: message.message,
+      user_profile: message.user_profile || null
     }, {
       headers: {
         'Content-Type': 'application/json',

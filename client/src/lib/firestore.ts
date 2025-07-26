@@ -20,6 +20,7 @@ export interface UserProfile {
   maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
   employmentStatus: 'salaried' | 'self-employed' | 'unemployed';
   industryType?: string; // Only for salaried employees
+  monthlyIncome: number;
   dependents: {
     wife: boolean;
     parents: boolean;
@@ -34,6 +35,10 @@ export interface UserProfile {
     life: boolean;
     health: boolean;
   };
+  insuranceCoverage: {
+    healthClaimLimit: number;
+    lifeClaimLimit: number;
+  };
   profileCompleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -47,8 +52,6 @@ function removeUndefinedValues(obj: any): any {
   for (const [key, value] of Object.entries(obj)) {
     if (value !== undefined) {
       cleaned[key] = value;
-    } else {
-      console.log(`Removing undefined field: ${key}`);
     }
   }
   return cleaned;
@@ -83,15 +86,11 @@ export class FirestoreService {
       const now = new Date();
       
       // Remove any undefined values before saving to Firestore
-      const profileWithTimestamps = {
+      const cleanedProfile = removeUndefinedValues({
         ...profile,
         createdAt: now,
         updatedAt: now,
-      };
-      
-      console.log('Profile before cleaning:', profileWithTimestamps);
-      const cleanedProfile = removeUndefinedValues(profileWithTimestamps);
-      console.log('Profile after cleaning:', cleanedProfile);
+      });
       
       await setDoc(userDoc, cleanedProfile);
     } catch (error) {

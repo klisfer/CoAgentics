@@ -5,6 +5,7 @@ import { Send, Bot, User, Loader2, Settings } from 'lucide-react'
 import { systemAPI, chatAPI } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { FirestoreService } from '@/lib/firestore'
 import MessageBubble from './MessageBubble'
 import AgentTyping from './AgentTyping'
 
@@ -97,10 +98,24 @@ export default function ChatInterface() {
         case 'v2':
           // Use v2 endpoint (main2.py Financial Assistant)
           console.log('Sending message with user ID:', currentUser?.uid || 'anonymous_user', 'session ID:', sessionId || 'none (first request)')
+          
+          // Fetch user profile from Firestore if user is authenticated
+          let userProfile = null
+          if (currentUser?.uid) {
+            try {
+              console.log('Fetching user profile from Firestore for user:', currentUser.uid)
+              userProfile = await FirestoreService.getUserProfile(currentUser.uid)
+              console.log('User profile fetched:', userProfile)
+            } catch (error) {
+              console.warn('Failed to fetch user profile from Firestore:', error)
+            }
+          }
+          
           response = await chatAPI.sendMessageV2({ 
             message: input.trim(),
             user_id: currentUser?.uid || 'anonymous_user', // Use actual Firebase user ID
-            session_id: sessionId || undefined // Pass current session ID (undefined for first request)
+            session_id: sessionId || undefined, // Pass current session ID (undefined for first request)
+            user_profile: userProfile // Include user profile data
           })
           // Store session ID from response for future requests
           if (response.session_id && response.session_id !== sessionId) {

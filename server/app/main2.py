@@ -56,10 +56,28 @@ global_inmemory_session_service = None
 APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT", "fi_mcp_app")
 
 
+class UserProfile(BaseModel):
+    uid: str
+    email: str
+    name: str
+    age: int
+    gender: str
+    maritalStatus: str
+    employmentStatus: str
+    industryType: Optional[str] = None
+    monthlyIncome: int
+    dependents: Dict[str, bool]
+    kidsCount: Optional[int] = None
+    location: Dict[str, str]
+    insurance: Dict[str, bool]
+    insuranceCoverage: Dict[str, int]
+    profileCompleted: bool
+
 class ChatRequest(BaseModel):
     user_id: str
     session_id: Optional[str] = None
     user_message: str = Field(..., description="The user's message text.")
+    user_profile: Optional[UserProfile] = None
 
 class ChatResponse(BaseModel):
     session_id: str
@@ -298,6 +316,24 @@ async def chat(request: ChatRequest):
             )
         
         logger.info(f"User Query: '{request.user_message}'")
+        
+        # Log user profile data if provided
+        if request.user_profile:
+            logger.info(f"User Profile Data received:")
+            logger.info(f"  Name: {request.user_profile.name}")
+            logger.info(f"  Age: {request.user_profile.age}")
+            logger.info(f"  Gender: {request.user_profile.gender}")
+            logger.info(f"  Marital Status: {request.user_profile.maritalStatus}")
+            logger.info(f"  Employment Status: {request.user_profile.employmentStatus}")
+            logger.info(f"  Monthly Income: ₹{request.user_profile.monthlyIncome}")
+            logger.info(f"  Industry Type: {request.user_profile.industryType}")
+            logger.info(f"  Location: {request.user_profile.location}")
+            logger.info(f"  Dependents: {request.user_profile.dependents}")
+            logger.info(f"  Kids Count: {request.user_profile.kidsCount}")
+            logger.info(f"  Insurance: {request.user_profile.insurance}")
+            logger.info(f"  Insurance Coverage: {request.user_profile.insuranceCoverage}")
+        else:
+            logger.info("No user profile data provided in request")
         
         # Create runner
         with time_operation("runner_initialization"):

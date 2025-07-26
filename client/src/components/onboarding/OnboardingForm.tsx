@@ -14,6 +14,7 @@ interface FormData {
   maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
   employmentStatus: 'salaried' | 'self-employed' | 'unemployed';
   industryType: string;
+  monthlyIncome: number;
   dependents: {
     wife: boolean;
     parents: boolean;
@@ -27,6 +28,10 @@ interface FormData {
   insurance: {
     life: boolean;
     health: boolean;
+  };
+  insuranceCoverage: {
+    healthClaimLimit: number;
+    lifeClaimLimit: number;
   };
 }
 
@@ -52,6 +57,7 @@ export default function OnboardingForm() {
     maritalStatus: 'single',
     employmentStatus: 'salaried',
     industryType: '',
+    monthlyIncome: 0,
     dependents: {
       wife: false,
       parents: false,
@@ -65,6 +71,10 @@ export default function OnboardingForm() {
     insurance: {
       life: false,
       health: false,
+    },
+    insuranceCoverage: {
+      healthClaimLimit: 0,
+      lifeClaimLimit: 0,
     },
   });
 
@@ -80,6 +90,9 @@ export default function OnboardingForm() {
         if (formData.employmentStatus === 'salaried' && !formData.industryType) {
           newErrors.industryType = 'Industry type is required for salaried employees';
         }
+        if (formData.employmentStatus !== 'unemployed' && formData.monthlyIncome <= 0) {
+          newErrors.monthlyIncome = 'Monthly income is required and must be greater than 0';
+        }
         break;
       case 2: // Family
         if (formData.dependents.kids && formData.kidsCount < 1) {
@@ -90,7 +103,13 @@ export default function OnboardingForm() {
         if (!formData.location.state) newErrors.state = 'State is required';
         if (!formData.location.city.trim()) newErrors.city = 'City is required';
         break;
-      case 4: // Insurance - optional, no validation needed
+      case 4: // Insurance
+        if (formData.insurance.health && formData.insuranceCoverage.healthClaimLimit <= 0) {
+          newErrors.healthClaimLimit = 'Health insurance claim limit is required when health insurance is selected';
+        }
+        if (formData.insurance.life && formData.insuranceCoverage.lifeClaimLimit <= 0) {
+          newErrors.lifeClaimLimit = 'Life insurance claim limit is required when life insurance is selected';
+        }
         break;
     }
 
@@ -128,9 +147,11 @@ export default function OnboardingForm() {
         gender: formData.gender,
         maritalStatus: formData.maritalStatus,
         employmentStatus: formData.employmentStatus,
+        monthlyIncome: formData.monthlyIncome,
         dependents: formData.dependents,
         location: formData.location,
         insurance: formData.insurance,
+        insuranceCoverage: formData.insuranceCoverage,
         profileCompleted: true,
       };
 
@@ -144,10 +165,6 @@ export default function OnboardingForm() {
           kidsCount: formData.kidsCount
         }),
       };
-
-      console.log('Profile before saving:', profile);
-      console.log('Form data dependents.kids:', formData.dependents.kids);
-      console.log('Form data kidsCount:', formData.kidsCount);
 
       await FirestoreService.createUserProfile(profile);
       
@@ -285,6 +302,25 @@ export default function OnboardingForm() {
                 {errors.industryType && <p className="text-red-500 text-sm mt-1">{errors.industryType}</p>}
               </div>
             )}
+
+            {formData.employmentStatus !== 'unemployed' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Monthly Income (₹) *
+                </label>
+                <input
+                  type="number"
+                  value={formData.monthlyIncome || ''}
+                  onChange={(e) => updateFormData({ monthlyIncome: parseInt(e.target.value) || 0 })}
+                  placeholder="Enter your monthly income in rupees"
+                  className={cn(
+                    "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                    errors.monthlyIncome ? "border-red-500" : "border-gray-300"
+                  )}
+                />
+                {errors.monthlyIncome && <p className="text-red-500 text-sm mt-1">{errors.monthlyIncome}</p>}
+              </div>
+            )}
           </div>
         );
 
@@ -410,29 +446,82 @@ export default function OnboardingForm() {
               <label className="block text-sm font-medium text-gray-700 mb-3">
                 Insurance (Select all that apply)
               </label>
-              <div className="space-y-3">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.insurance.life}
-                    onChange={(e) => updateFormData({
-                      insurance: { ...formData.insurance, life: e.target.checked }
-                    })}
-                    className="mr-2 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-sm">Life Insurance</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.insurance.health}
-                    onChange={(e) => updateFormData({
-                      insurance: { ...formData.insurance, health: e.target.checked }
-                    })}
-                    className="mr-2 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-sm">Health Insurance</span>
-                </label>
+              <div className="space-y-6">
+                <div>
+                  <label className="flex items-center mb-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.insurance.life}
+                      onChange={(e) => updateFormData({
+                        insurance: { ...formData.insurance, life: e.target.checked }
+                      })}
+                      className="mr-2 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm">Life Insurance</span>
+                  </label>
+                  
+                  {formData.insurance.life && (
+                    <div className="ml-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Life Insurance Claim Limit (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.insuranceCoverage.lifeClaimLimit || ''}
+                        onChange={(e) => updateFormData({
+                          insuranceCoverage: {
+                            ...formData.insuranceCoverage,
+                            lifeClaimLimit: parseInt(e.target.value) || 0
+                          }
+                        })}
+                        placeholder="Enter life insurance claim limit"
+                        className={cn(
+                          "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                          errors.lifeClaimLimit ? "border-red-500" : "border-gray-300"
+                        )}
+                      />
+                      {errors.lifeClaimLimit && <p className="text-red-500 text-sm mt-1">{errors.lifeClaimLimit}</p>}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="flex items-center mb-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.insurance.health}
+                      onChange={(e) => updateFormData({
+                        insurance: { ...formData.insurance, health: e.target.checked }
+                      })}
+                      className="mr-2 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <span className="text-sm">Health Insurance</span>
+                  </label>
+
+                  {formData.insurance.health && (
+                    <div className="ml-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Health Insurance Claim Limit (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.insuranceCoverage.healthClaimLimit || ''}
+                        onChange={(e) => updateFormData({
+                          insuranceCoverage: {
+                            ...formData.insuranceCoverage,
+                            healthClaimLimit: parseInt(e.target.value) || 0
+                          }
+                        })}
+                        placeholder="Enter health insurance claim limit"
+                        className={cn(
+                          "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                          errors.healthClaimLimit ? "border-red-500" : "border-gray-300"
+                        )}
+                      />
+                      {errors.healthClaimLimit && <p className="text-red-500 text-sm mt-1">{errors.healthClaimLimit}</p>}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
