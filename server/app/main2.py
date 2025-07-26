@@ -3,6 +3,7 @@ import os
 import uvicorn
 import logging
 import asyncio
+import traceback
 
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
@@ -26,20 +27,10 @@ from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
 
 from financial_advisor import prompt
-# from financial_advisor.sub_agents.financial_assistant import data_analyst_agent
-# from financial_advisor.sub_agents.financial_advisor import financial_advisor_agent
-# from financial_advisor.sub_agents.optimizer_assistant import optimizer_agent
-# from financial_advisor.sub_agents.clarifying_agent import clarifying_agent
-# from financial_advisor.sub_agents.triage_assistant import triage_assitant
-
 from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
 from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
 from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
-from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
-    StreamableHTTPConnectionParams,
-    # SseConnectionParams  # Optional, if needed
-)
+
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
@@ -56,14 +47,15 @@ session_service = InMemorySessionService()
 artifacts_service = InMemoryArtifactService()
 fi_agent = None
 fi_toolset = None
+initialization_error = None
 
-APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT")
+APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT", "fi_mcp_app")
 
 
 class ChatRequest(BaseModel):
     user_id: str
     session_id: Optional[str] = None
-    new_message: str = Field(..., description="The user's message text.")
+    user_message: str = Field(..., description="The user's message text.")  # Fixed: was new_message
 
 class ChatResponse(BaseModel):
     session_id: str
@@ -76,34 +68,28 @@ class SessionResponse(BaseModel):
 async def get_agent_async():
     """Creates an ADK Agent equipped with tools from the Fi MCP Server."""
     try:
-        # Option 1: For Fi MCP server with SSE endpoint
-        # Try this first if your Fi server supports Server-Sent Events
-        # connection_params = SseConnectionParams(
-        #     url="http://localhost:8080/mcp/stream"  # Changed from /mcp/stream to /sse
-        # )
+        logger.info("Attempting to connect to Fi MCP server...")
+        
+        # Try StreamableHTTPConnectionParams first
         connection_params = StreamableHTTPConnectionParams(
             url="http://localhost:8080/mcp/stream"
         )
         
-        # Option 2: For Fi MCP server with streamable HTTP
-        # Uncomment this if the SSE option doesn't work
-        # connection_params = StreamableHTTPConnectionParams(
-        #     url="http://localhost:8080/mcp/stream"  # Your original URL
-        # )
-        
-        # Create the MCPToolset
+        # Create the MCPToolset with timeout
         toolset = MCPToolset(
             connection_params=connection_params,
-            tool_filter=None  # Optional: can filter specific tools like ['get_networth', 'get_transactions']
+            tool_filter=None
         )
         
-        # Get tools from the toolset
-        tools = await toolset.get_tools()
+        # Get tools from the toolset with timeout
+        try:
+            # Add a timeout to prevent hanging
+            tools = await asyncio.wait_for(toolset.get_tools(), timeout=10.0)
+            logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
+        except asyncio.TimeoutError:
+            logger.error("Timeout while fetching tools from MCP server")
+            raise Exception("MCP server connection timeout")
         
-        logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
-        
-
-
         financial_coordinator = LlmAgent(
             name="master_financial_planner",
             model=MODEL,
@@ -133,71 +119,72 @@ async def get_agent_async():
         
     except Exception as e:
         logger.error(f"Failed to connect to Fi MCP server: {e}")
-        logger.error("Try switching between SseConnectionParams and StreamableHTTPConnectionParams")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise
-
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
-
-    # Startup
-    print("Application starting up...")
-
-    global fi_agent, fi_toolset
+    global fi_agent, fi_toolset, initialization_error
     
     # Startup
-    logger.info("Initializing Fi MCP client...")
+    logger.info("Application starting up...")
+    
     try:
-        fi_agent, fi_toolset = await get_agent_async()
-        logger.info("Fi MCP client initialized successfully")
+        # Load environment variables first
+        load_dotenv()
+        
+        # Check for credentials
+        if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+            logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set, trying to continue...")
+        
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        
+        if not project_id:
+            logger.warning("GOOGLE_CLOUD_PROJECT not set, using default")
+            project_id = "default-project"
+        
+        # Initialize Vertex AI Manager
+        try:
+            vertex_ai_manager.initialize(project_id=project_id, location=location)
+            logger.info("Vertex AI Manager initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Vertex AI Manager: {e}")
+            # Continue without it for now
+        
+        # Initialize Fi MCP client with timeout
+        logger.info("Initializing Fi MCP client...")
+        try:
+            fi_agent, fi_toolset = await asyncio.wait_for(get_agent_async(), timeout=30.0)
+            logger.info("Fi MCP client initialized successfully")
+        except asyncio.TimeoutError:
+            logger.error("Timeout during Fi MCP client initialization")
+            initialization_error = "MCP server connection timeout"
+        except Exception as e:
+            logger.error(f"Failed to initialize Fi MCP client: {e}")
+            initialization_error = str(e)
+            # Don't raise - let the app start but mark as unhealthy
+        
+        logger.info("Application startup completed")
+        
     except Exception as e:
-        logger.error(f"Failed to initialize Fi MCP client: {e}")
-        raise
-
+        logger.error(f"Critical error during startup: {e}")
+        initialization_error = str(e)
+        # Don't raise - let FastAPI handle it gracefully
     
-    # Load environment variables from .env file
-    load_dotenv()
-    
-    # Check for credentials before initializing
-    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-        print("ERROR: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.")
-        print("Please run 'gcloud auth application-default login' and then set the variable, for example:")
-        print("export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/application_default_credentials.json")
-        yield
-        return
-
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-    
-    if not project_id:
-        print("ERROR: GOOGLE_CLOUD_PROJECT environment variable not set.")
-        print("Please create a .env file in the 'backend' directory with the following content:")
-        print("GOOGLE_CLOUD_PROJECT=your-gcp-project-id-here")
-        # In a real app, you might raise an error or exit
-        yield
-        return
-
-    try:
-        vertex_ai_manager.initialize(project_id=project_id, location=location)
-        print("Vertex AI Manager has been initialized.")
-    except Exception as e:
-        print(f"FATAL: Could not initialize Vertex AI Manager: {e}")
-        # In a real app, you might exit or switch to a fallback
- 
-    print("Application shutting down...")
-
     yield
     
     # Shutdown
-    logger.info("Shutting down Fi MCP client...")
+    logger.info("Application shutting down...")
     if fi_toolset:
         try:
             await fi_toolset.close()
             logger.info("Fi MCP toolset closed successfully")
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
+
 
 # --- FastAPI App ---
 app = FastAPI(
@@ -206,104 +193,112 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# --- Endpoint ---
+# --- Endpoints ---
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """Get a response from the Fi financial assistant agent."""
-    global fi_agent
+    global fi_agent, initialization_error
+    
+    if initialization_error:
+        raise HTTPException(status_code=503, detail=f"Service unavailable: {initialization_error}")
     
     if not fi_agent:
         raise HTTPException(status_code=503, detail="Fi agent not initialized")
-    session_service = vertex_ai_manager.get_session_service()
-    memory_service = vertex_ai_manager.get_memory_service()
-    session_id = request.session_id
     
     try:
-        # 1. Get or create the session
+        # Use vertex AI manager services
+        session_service = vertex_ai_manager.get_session_service()
+        memory_service = vertex_ai_manager.get_memory_service()
+        session_id = request.session_id
+        
+        # Get or create session
         if session_id:
-            session = await session_service.get_session(
-                app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-            )
-            if not session:
-                raise HTTPException(status_code=404, detail="Session not found.")
+            try:
+                session = await session_service.get_session(
+                    app_name=APP_NAME, user_id=request.user_id, session_id=session_id
+                )
+                if not session:
+                    raise HTTPException(status_code=404, detail="Session not found.")
+            except Exception as e:
+                logger.error(f"Error getting session: {e}")
+                # Create new session if getting fails
+                session = await session_service.create_session(
+                    app_name=APP_NAME, user_id=request.user_id
+                )
         else:
             session = await session_service.create_session(
                 app_name=APP_NAME, user_id=request.user_id
             )
         
         session_id = session.id
-
-        app_name, user_id, session_id = "fi_mcp_app", "user_123", "session_1"
-        
-        # Create or get session
-        session = await session_service.create_session(
-            state={}, 
-            app_name=app_name, 
-            user_id=user_id
-        )
         
         logger.info(f"User Query: '{request.user_message}'")
         
         # Create runner
         runner = Runner(
-            app_name=app_name,
+            app_name=APP_NAME,
             agent=fi_agent,
             artifact_service=artifacts_service,
-            # session_service=session_service,        
-            session_service=vertex_ai_manager.get_session_service(),
-            memory_service=vertex_ai_manager.get_memory_service(),
+            session_service=session_service,
+            memory_service=memory_service,
         )
         
         # Prepare user message
         content = types.Content(role='user', parts=[types.Part(text=request.user_message)])
         
-        # Run agent and collect response
+        # Run agent with timeout
         logger.info("Running Fi agent...")
-        events_async = runner.run_async(
-            session_id=session.id,
-            user_id=user_id,
-            new_message=content
-        )
+        try:
+            events_async = runner.run_async(
+                session_id=session.id,
+                user_id=request.user_id,
+                new_message=content
+            )
+            
+            response_text = ""
+            async for event in events_async:
+                logger.info(f"Event received: {type(event)}")
+                if hasattr(event, 'content') and hasattr(event.content, 'parts'):
+                    if event.content.parts and hasattr(event.content.parts[0], 'text'):
+                        response_text = event.content.parts[0].text
+            
+            if not response_text:
+                response_text = "I apologize, but I couldn't generate a response at this time."
+                
+        except Exception as e:
+            logger.error(f"Error running agent: {e}")
+            response_text = "I encountered an error while processing your request. Please try again."
         
-        response_text = ""
-        async for event in events_async:
-            logger.info(f"Event received: {event}")
-            if hasattr(event, 'content') and hasattr(event.content, 'parts'):
-                if event.content.parts and hasattr(event.content.parts[0], 'text'):
-                    response_text = event.content.parts[0].text
+        # Update session in memory
+        try:
+            updated_session = await session_service.get_session(
+                app_name=APP_NAME, user_id=request.user_id, session_id=session_id
+            )
+            if updated_session:
+                await memory_service.add_session_to_memory(updated_session)
+        except Exception as e:
+            logger.error(f"Error updating session memory: {e}")
+            # Continue anyway
         
-        # Get updated session state
-        # updated_session = session_service.get_session(
-        #     app_name=app_name, 
-        #     user_id=user_id, 
-        #     session_id=session.id
-        # )
-
-        updated_session = await session_service.get_session(
-            app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-        )
-        await memory_service.add_session_to_memory(updated_session)
-
         return ChatResponse(session_id=session_id, response_text=response_text)
         
-        # return {
-        #     "response": response_text,
-        #     "session_id": session.id,
-        #     "user_id": user_id
-        # }
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {
-        "status": "healthy", 
+        "status": "healthy" if not initialization_error else "unhealthy",
         "agent_initialized": fi_agent is not None,
-        "toolset_available": fi_toolset is not None
+        "toolset_available": fi_toolset is not None,
+        "initialization_error": initialization_error
     }
+
 
 @app.get("/")
 async def root():
@@ -311,11 +306,14 @@ async def root():
     return {
         "message": "Fi Financial Assistant API",
         "version": "1.0.0",
+        "status": "running",
         "endpoints": {
             "chat": "/chat - POST - Send a message to the financial assistant",
-            "health": "/health - GET - Check API health status"
+            "health": "/health - GET - Check API health status",
+            "docs": "/docs - GET - API documentation"
         }
     }
+
 
 # --- Server Startup ---
 if __name__ == "__main__":
