@@ -20,11 +20,14 @@ from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
 
 from financial_advisor import prompt
-from financial_advisor.sub_agents.financial_assistant import data_analyst_agent
-from financial_advisor.sub_agents.financial_advisor import financial_advisor_agent
-from financial_advisor.sub_agents.optimizer_assistant import optimizer_agent
-from financial_advisor.sub_agents.clarifying_agent import clarifying_agent
-from financial_advisor.sub_agents.triage_assistant import triage_assitant
+# from financial_advisor.sub_agents.financial_assistant import data_analyst_agent
+# from financial_advisor.sub_agents.financial_advisor import financial_advisor_agent
+# from financial_advisor.sub_agents.optimizer_assistant import optimizer_agent
+# from financial_advisor.sub_agents.clarifying_agent import clarifying_agent
+# from financial_advisor.sub_agents.triage_assistant import triage_assitant
+from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
+from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
+from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
 from google.adk.tools.mcp_tool.mcp_toolset import (
     MCPToolset,
     StreamableHTTPConnectionParams,
@@ -79,23 +82,23 @@ async def get_agent_async():
             model=MODEL,
             description=(
                 "Acts as the central decision-maker coordinating between specialized finance agents. "
-                "use this tool to get user new worth - fetch_net_worthtool"
-                "When a user question arrives, it first delegates to a triage agent to determine the type of query: "
-                "(1) General finance knowledge, (2) Related to user's current investments, or (3) Focused on future financial goals. "
-                "If no clarification is needed, route the query to the financial assistant. "
-                "If clarification is needed, it engages the clarifying agent to collect additional inputs from the user, "
-                "then forwards the enriched query to the financial advisor. "
-                "Finally, it invokes the optimizer agent to enhance the recommendation. "
+                "use the below tools first to get information related to user finances:"
+                "1.tool to get user new worth - fetch_net_worthtool"
+                "2.tool to get user credit report - fetch_credit_reporttool"
+                "3.tool to get user bank transaction - " 
+                "4.tool to get user epf details - fetch_epf_detailstool"
+                "5.tool to get user mutual fund transactions - fetch_mf_transactionstool"
+                "6.tool to get user stock transactions - fetch_stock_transactionstool"
+                "First fetch the data from respective tool above based on the question and then use the specific agent with that data, user question to get answer for user question"
+                "When a user question arrives, asses for the given question which is the right agent among tax_consultant_agent, investment_advisor_agent and insurance_advisor_agent"
                 "Returns a comprehensive response including direct insights and optimized financial strategies."
             ),
             instruction=prompt.FINANCIAL_COORDINATOR_PROMPT,
             output_key="master_financial_planner_output",
             tools=[
-                AgentTool(agent=triage_assitant),
-                AgentTool(agent=clarifying_agent),
-                AgentTool(agent=data_analyst_agent),
-                AgentTool(agent=financial_advisor_agent),
-                AgentTool(agent=optimizer_agent),
+                AgentTool(agent=tax_consultant_agent),
+                AgentTool(agent=investment_advisor_agent),
+                AgentTool(agent=insurance_advisor_agent),
                 toolset
             ],
         )

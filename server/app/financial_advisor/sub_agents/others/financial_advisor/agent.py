@@ -1,5 +1,5 @@
 
-"""financial_advisor_agent for finding the ideal investment advise"""
+"""insurance_advisor_agent for helping with insurance related """
 
 from google.adk import Agent
 
