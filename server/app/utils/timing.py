@@ -20,26 +20,26 @@ class TimingTracker:
     def start_total_timer(self):
         """Start the total request timer."""
         self.total_start_time = time.time()
-        logger.info("🕐 Starting total request timer")
+        logger.info("Starting total request timer")
     
     def start_timer(self, operation_name: str):
         """Start timing an operation."""
         start_time = time.time()
         self.start_times[operation_name] = start_time
-        logger.info(f"🕐 Started timer for: {operation_name}")
+        logger.info(f"Started timer for: {operation_name}")
         return start_time
     
     def end_timer(self, operation_name: str) -> float:
         """End timing an operation and return the duration."""
         if operation_name not in self.start_times:
-            logger.warning(f"⚠️ No start time found for operation: {operation_name}")
+            logger.warning(f"No start time found for operation: {operation_name}")
             return 0.0
         
         end_time = time.time()
         duration = end_time - self.start_times[operation_name]
         self.timings[operation_name] = duration
         
-        logger.info(f"⏱️ {operation_name}: {duration:.3f}s")
+        logger.info(f"{operation_name}: {duration:.3f}s")
         
         # Clean up
         del self.start_times[operation_name]
@@ -62,7 +62,7 @@ class TimingTracker:
             "unaccounted_time": round(total_time - sum(self.timings.values()), 3)
         }
         
-        logger.info(f"📊 Timing Summary: {summary}")
+        logger.info(f"Timing Summary: {summary}")
         return summary
     
     @contextmanager

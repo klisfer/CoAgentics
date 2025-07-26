@@ -53,19 +53,21 @@ class VertexAIManager:
         self.location = location
 
         try:
+            print(f"Initializing Vertex AI with project: {project_id}, location: {location}")
             vertexai.init(project=project_id, location=location)
             client = vertexai.Client(project=project_id, location=location)
+            print("Vertex AI client created successfully")
             
-            # For this example, we create a new ephemeral agent engine instance
-            # on each startup. For a real production system, you might want to
-            # retrieve an existing one by its ID.
-            agent_engine = client.agent_engines.create()
-            self.agent_engine_id = agent_engine.api_resource.name.split("/")[-1]
+            
+            print("Setting up for VertexAiSessionService...")
+            agent_engine_id = client.api_resource.name.split("/")[-1]
+            print(f"Using reasoning engine ID: {agent_engine_id}")
+            
+            self.agent_engine_id = agent_engine_id
 
             self.session_service = VertexAiSessionService(
                 project=project_id,
                 location=location,
-                agent_engine_id=self.agent_engine_id,
             )
 
             self.memory_service = VertexAiMemoryBankService(

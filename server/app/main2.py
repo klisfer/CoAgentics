@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, Dict, Any
 from utils.timing import start_request_timing, time_operation, log_timing_summary
 
-
 from dotenv import load_dotenv
 from google.genai import types
 from google.adk.agents.llm_agent import LlmAgent
@@ -37,7 +36,6 @@ from financial_advisor.sub_agents.finance_genie_assistant import web_search_agen
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
-
 MODEL = "gemini-2.5-flash"
 
 # --- Configuration ---
@@ -45,17 +43,14 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global variables to store services and agent
-session_service = InMemorySessionService()
-artifacts_service = InMemoryArtifactService()
+# Global variables for core services only
 fi_agent = None
 fi_toolset = None
 initialization_error = None
+artifacts_service = InMemoryArtifactService()
 
-# Global in-memory session service instance (to persist across requests)
+# Single global in-memory session service instance
 global_inmemory_session_service = None
-# Simple session cache for in-memory sessions (as backup if service doesn't persist)
-inmemory_session_cache = {}
 
 APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT", "fi_mcp_app")
 
@@ -73,6 +68,72 @@ class ChatResponse(BaseModel):
 class SessionResponse(BaseModel):
     session_id: str
     user_id: str
+
+
+def get_session_service_and_app_name():
+    """
+    Get the appropriate session service and app name.
+    Returns tuple of (session_service, app_name, is_vertex_ai).
+    Falls back to in-memory if Vertex AI is not available.
+    """
+    global global_inmemory_session_service
+    
+    try:
+        # Try to use Vertex AI session service
+        session_service = vertex_ai_manager.get_session_service()
+        app_name = vertex_ai_manager.agent_engine_id or APP_NAME  # Use the reasoning engine ID
+        logger.info("Using Vertex AI session service")
+        return session_service, app_name, True
+    except (RuntimeError, AttributeError) as e:
+        # Fall back to in-memory session service
+        logger.info(f"Vertex AI not available, using in-memory session service: {str(e)}")
+        if global_inmemory_session_service is None:
+            global_inmemory_session_service = InMemorySessionService()
+            logger.info("Created global in-memory session service")
+        return global_inmemory_session_service, APP_NAME, False
+
+
+async def get_or_create_session(session_service, app_name, user_id, session_id=None):
+    """
+    Get existing session or create new one.
+    Handles both Vertex AI and in-memory session services uniformly.
+    """
+    try:
+        if session_id:
+            # Try to get existing session
+            logger.info(f"Looking for existing session: {session_id}")
+            session = await session_service.get_session(
+                app_name=app_name, 
+                user_id=user_id, 
+                session_id=session_id
+            )
+            
+            if session:
+                logger.info(f"Retrieved existing session: {session.id}")
+                return session
+            else:
+                logger.warning(f"Session {session_id} not found, creating new one")
+        
+        # Create new session
+        logger.info("Creating new session")
+        session = await session_service.create_session(
+            app_name=app_name, 
+            user_id=user_id
+        )
+        logger.info(f"Created new session: {session.id}")
+        return session
+        
+    except Exception as e:
+        logger.error(f"Error with session management: {e}")
+        # Create new session as fallback
+        logger.info("Creating new session due to error")
+        session = await session_service.create_session(
+            app_name=app_name, 
+            user_id=user_id
+        )
+        logger.info(f"Created fallback session: {session.id}")
+        return session
+
 
 async def get_agent_async():
     """Creates an ADK Agent equipped with tools from the Fi MCP Server."""
@@ -95,90 +156,82 @@ async def get_agent_async():
             # Add a timeout to prevent hanging
             tools = await asyncio.wait_for(toolset.get_tools(), timeout=10.0)
             logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
+            
+            if not tools:
+                logger.warning("No tools were returned from Fi MCP server")
+                tools = []
+            
             logger.info(f"Successfully fetched {toolset} toolset from Fi MCP server.")
+            
         except asyncio.TimeoutError:
-            logger.error("Timeout while fetching tools from MCP server")
-            raise Exception("MCP server connection timeout")
+            logger.error("Timeout while fetching tools from Fi MCP server")
+            tools = []
+            toolset = None
+        except Exception as e:
+            logger.error(f"Error fetching tools from Fi MCP server: {e}")
+            tools = []
+            toolset = None
         
-        financial_coordinator = LlmAgent(
-            name="master_financial_planner",
+        # Create the agent with available tools
+        # web_search_tool = google_search
+        tax_assistant_tool = AgentTool(agent=tax_consultant_agent)
+        investment_advisor_tool = AgentTool(agent=investment_advisor_agent)
+        insurance_advisor_tool = AgentTool(agent=insurance_advisor_agent)
+        web_search_agent_tool = AgentTool(agent=web_search_agent)
+        
+        # Combine all tools
+        all_tools = [
+            # web_search_tool,
+            tax_assistant_tool, 
+            investment_advisor_tool,
+            insurance_advisor_tool,
+            web_search_agent_tool
+        ] + tools  # Add MCP tools if available
+        
+        # Create the main agent
+        fi_agent = LlmAgent(
             model=MODEL,
-            description=(
-                "Acts as the central decision-maker coordinating between specialized finance agents. "
-                "use the below tools first to get information related to user finances if user question is related to their finance:"
-                "1.tool to get user new worth - fetch_net_worthtool"
-                "2.tool to get user credit report - fetch_credit_reporttool"
-                "3.tool to get user bank transaction - " 
-                "4.tool to get user epf details - fetch_epf_detailstool"
-                "5.tool to get user mutual fund transactions - fetch_mf_transactionstool"
-                "6.tool to get user stock transactions - fetch_stock_transactionstool"
-                "First fetch the data from respective tool above based on the question and then use the specific agent with that data, user question to get answer for user question"
-                "When a user question arrives, asses for the given question which is the right agent among tax_consultant_agent, investment_advisor_agent and insurance_advisor_agent"
-                "Returns a comprehensive response including direct insights and optimized financial strategies."
-            ),
+            name="financial_advisor",
+            description="Fi: Your AI-powered financial advisor specializing in comprehensive financial planning.",
             instruction=prompt.FINANCIAL_COORDINATOR_PROMPT,
-            output_key="master_financial_planner_output",
-            tools=[
-                AgentTool(agent=tax_consultant_agent),
-                AgentTool(agent=investment_advisor_agent),
-                AgentTool(agent=insurance_advisor_agent),
-                toolset,
-                AgentTool(agent=web_search_agent)
-            ],
+            tools=all_tools
         )
-        return financial_coordinator, toolset
+        
+        logger.info("Fi agent created successfully")
+        return fi_agent, toolset
         
     except Exception as e:
-        logger.error(f"Failed to connect to Fi MCP server: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Failed to create Fi agent: {e}", exc_info=True)
         raise
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle startup and shutdown events."""
-    global fi_agent, fi_toolset, initialization_error
-    
     # Startup
-    logger.info("Application starting up...")
+    global fi_agent, fi_toolset, initialization_error
+    logger.info("===== Application startup started =====")
     
     try:
-        # Load environment variables first
-        load_dotenv()
-        
-        # Check for credentials
-        if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-            logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set, trying to continue...")
-        
+        # Initialize Vertex AI Manager
         project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
         location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
         
-        if not project_id:
-            logger.warning("GOOGLE_CLOUD_PROJECT not set, using default")
-            project_id = "default-project"
+        if project_id:
+            try:
+                vertex_ai_manager.initialize(project_id=project_id, location=location)
+                logger.info("Vertex AI Manager initialized successfully")
+            except Exception as e:
+                logger.warning(f"Vertex AI Manager initialization failed: {e}")
+                logger.info("Will fall back to in-memory session service")
+        else:
+            logger.info("No Google Cloud project configured, using in-memory session service")
         
-        # Initialize Vertex AI Manager
-        try:
-            vertex_ai_manager.initialize(project_id=project_id, location=location)
-            logger.info("Vertex AI Manager initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize Vertex AI Manager: {e}")
-            # Continue without it for now
+        # Initialize Fi agent
+        fi_agent, fi_toolset = await get_agent_async()
         
-        # Initialize Fi MCP client with timeout
-        logger.info("Initializing Fi MCP client...")
-        try:
-            fi_agent, fi_toolset = await asyncio.wait_for(get_agent_async(), timeout=30.0)
-            logger.info("Fi MCP client initialized successfully")
-        except asyncio.TimeoutError:
-            logger.error("Timeout during Fi MCP client initialization")
-            initialization_error = "MCP server connection timeout"
-        except Exception as e:
-            logger.error(f"Failed to initialize Fi MCP client: {e}")
-            initialization_error = str(e)
-            # Don't raise - let the app start but mark as unhealthy
-        
-        logger.info("Application startup completed")
+        logger.info("===== Application startup completed =====")
+        logger.info(f"Fi agent available: {fi_agent is not None}")
+        logger.info(f"Initialization error: {initialization_error}")
         
     except Exception as e:
         logger.error(f"Critical error during startup: {e}")
@@ -230,104 +283,28 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=503, detail="Fi agent not initialized")
     
     try:
-        # Use vertex AI manager services
-        with time_operation("vertex_ai_service_initialization"):
-            try:
-                session_service = vertex_ai_manager.get_session_service()
-                # memory_service = vertex_ai_manager.get_memory_service()  # Commented out for performance
-            except RuntimeError as e:
-                if "not initialized" in str(e):
-                    logger.warning("Vertex AI Manager not initialized, falling back to in-memory session service")
-                    # Fall back to global in-memory session service (shared across requests)
-                    global global_inmemory_session_service
-                    if global_inmemory_session_service is None:
-                        global_inmemory_session_service = InMemorySessionService()
-                        logger.info("Created global in-memory session service")
-                    session_service = global_inmemory_session_service
-                else:
-                    raise
+        # Get session service and app name
+        with time_operation("session_service_initialization"):
+            session_service, app_name, is_vertex_ai = get_session_service_and_app_name()
         
-        session_id = request.session_id
-        
-        # Get or create session (handle both Vertex AI and in-memory sessions)
+        # Get or create session
         with time_operation("session_management"):
-            is_inmemory_session = isinstance(session_service, InMemorySessionService)
-            
-            if session_id and not is_inmemory_session:
-                # Vertex AI session service - use existing session retrieval
-                try:
-                    logger.info(f"🔍 Getting existing Vertex AI session: {session_id}")
-                    session = await session_service.get_session(
-                        app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-                    )
-                    if not session:
-                        logger.info("🔄 Session not found, creating new Vertex AI session")
-                        session = await session_service.create_session(
-                            app_name=APP_NAME, user_id=request.user_id
-                        )
-                    logger.info(f"✅ Using Vertex AI session: {session.id}")
-                except Exception as e:
-                    logger.error(f"❌ Error with Vertex AI session: {e}")
-                    # Create new session if getting fails
-                    logger.info("🔄 Creating new Vertex AI session due to error")
-                    session = await session_service.create_session(
-                        app_name=APP_NAME, user_id=request.user_id
-                    )
-                    logger.info(f"✅ Created new Vertex AI session: {session.id}")
-            elif session_id and is_inmemory_session:
-                # In-memory session service - use same API as Vertex AI
-                try:
-                    logger.info(f"🔍 Looking for existing in-memory session: {session_id}")
-                    
-                    # Try to get existing session using the same API as Vertex AI
-                    session = await session_service.get_session(
-                        app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-                    )
-                    if session:
-                        logger.info(f"✅ Retrieved existing in-memory session: {session.id}")
-                        logger.info(f"🔍 Debug: Session state contains {len(session.state.get('history', []))} messages")
-                    else:
-                        logger.warning(f"🔄 In-memory session {session_id} not found, creating new one")
-                        session = await session_service.create_session(
-                            app_name=APP_NAME, user_id=request.user_id
-                        )
-                        logger.info(f"✅ Created new in-memory session: {session.id}")
-                except Exception as e:
-                    logger.error(f"❌ Error with in-memory session: {e}")
-                    logger.info("🔄 Creating new in-memory session due to error")
-                    session = await session_service.create_session(
-                        app_name=APP_NAME, user_id=request.user_id
-                    )
-                    logger.info(f"✅ Created new in-memory session: {session.id}")
-            else:
-                # No session_id provided or first request
-                if is_inmemory_session:
-                    logger.info("🆕 Creating new in-memory session")
-                    session = await session_service.create_session(
-                        app_name=APP_NAME, user_id=request.user_id
-                    )
-                    logger.info(f"✅ Created new in-memory session: {session.id}")
-                else:
-                    logger.info("🆕 Creating new Vertex AI session")
-                    session = await session_service.create_session(
-                        app_name=APP_NAME, user_id=request.user_id
-                    )
-                    logger.info(f"✅ Created new Vertex AI session: {session.id}")
-        
-        session_id = session.id
-        # Use the actual session variables, don't override them
-        user_id = request.user_id
+            session = await get_or_create_session(
+                session_service=session_service,
+                app_name=app_name,
+                user_id=request.user_id,
+                session_id=request.session_id
+            )
         
         logger.info(f"User Query: '{request.user_message}'")
         
         # Create runner
         with time_operation("runner_initialization"):
             runner = Runner(
-                app_name=APP_NAME,
+                app_name=app_name,
                 agent=fi_agent,
                 artifact_service=artifacts_service,
                 session_service=session_service,
-                # memory_service=memory_service,  # Commented out for performance
             )
         
         # Prepare user message
@@ -357,15 +334,6 @@ async def chat(request: ChatRequest):
         async def update_session_memory_background():
             """Background task to update session memory without blocking response."""
             try:
-                logger.info("Background: Updating session memory...")
-                # Re-enable when memory service is needed
-                # memory_service = vertex_ai_manager.get_memory_service()
-                # updated_session = await session_service.get_session(
-                #     app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-                # )
-                # if updated_session:
-                #     await memory_service.add_session_to_memory(updated_session)
-                #     logger.info("Background: Session memory updated")
                 logger.info("Background: Session memory update skipped (memory service disabled)")
             except Exception as e:
                 logger.error(f"Background: Error updating session memory: {e}")
@@ -375,10 +343,10 @@ async def chat(request: ChatRequest):
         
         # Get timing summary
         timing_info = log_timing_summary()
-        logger.info(f"🏁 Chat request completed - Total time: {timing_info['total_time']}s")
+        logger.info(f"Chat request completed - Total time: {timing_info['total_time']}s")
         
         return ChatResponse(
-            session_id=session_id, 
+            session_id=session.id, 
             response_text=response_text,
             timing_info=timing_info
         )
@@ -418,4 +386,4 @@ async def root():
 
 # --- Server Startup ---
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8002, reload=True)
+    uvicorn.run("main2:app", host="0.0.0.0", port=8002, reload=True)
