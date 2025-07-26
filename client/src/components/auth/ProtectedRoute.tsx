@@ -10,14 +10,18 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, needsOnboarding } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !currentUser) {
-      router.push('/auth');
+    if (!loading) {
+      if (!currentUser) {
+        router.push('/auth');
+      } else if (needsOnboarding) {
+        router.push('/onboarding');
+      }
     }
-  }, [currentUser, loading, router]);
+  }, [currentUser, loading, needsOnboarding, router]);
 
   if (loading) {
     return (
@@ -36,6 +40,17 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
           <p className="text-gray-600">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Redirecting to onboarding...</p>
         </div>
       </div>
     );

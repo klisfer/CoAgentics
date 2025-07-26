@@ -1,74 +1,76 @@
 import axios from 'axios';
 
-// API configuration
-const API_BASE_URL = 'http://localhost:8002'; // Force port 8002 for main2.py
+// Base configuration
+const API_BASE_URL_V1 = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL_V2 = process.env.NEXT_PUBLIC_API_URL_V2 || 'http://localhost:8002';
 const API_PREFIX = '/api/v1';
 
+// Create axios instance with base configuration
 const api = axios.create({
-  baseURL: `${API_BASE_URL}${API_PREFIX}`,
+  baseURL: `${API_BASE_URL_V1}${API_PREFIX}`,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Types for API responses
+// Add request interceptor to include auth token
+api.interceptors.request.use(
+  (config) => {
+    // Add auth token if available
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Handle unauthorized - could redirect to login
+      localStorage.removeItem('auth_token');
+      window.location.href = '/auth';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Types
 export interface ChatMessage {
   message: string;
-  context?: Record<string, any>;
 }
 
 export interface ChatResponse {
   response: string;
   agent_used: string;
-  metadata?: Record<string, any>;
+  metadata: any;
   conversation_id: string;
   session_id: string;
 }
 
 export interface AgentStatus {
-  agent_id: string;
   name: string;
-  status: string;
-  current_iteration: number;
-  max_iterations: number;
-  execution_time?: number;
-  capabilities: string[];
-  enabled: boolean;
-  priority: number;
-  tools_available?: number;
+  status: 'active' | 'inactive' | 'error';
+  lastActivity?: string;
 }
 
 export interface ToolStatus {
   name: string;
-  id: string;
-  status: string;
-  description: string;
+  status: 'available' | 'unavailable' | 'error';
+  lastUsed?: string;
 }
 
-export interface SystemHealth {
-  status: string;
+export interface SystemInfo {
   version: string;
-  environment: string;
-  agent_manager: string;
-  agents: Record<string, any>;
-  tools: Record<string, any>;
-  master_planner: string;
-  total_agents: number;
-  enabled_agents: number;
-  total_tools: number;
-}
-
-export interface FinancialCalculation {
-  calculation_type: string;
-  parameters: Record<string, any>;
-}
-
-export interface ToolResponse {
-  success: boolean;
-  data?: any;
-  error?: string;
-  execution_time?: number;
-  tool_name: string;
+  uptime: string;
+  agents: AgentStatus[];
+  tools: ToolStatus[];
 }
 
 // API functions
@@ -80,8 +82,8 @@ export const chatAPI = {
   },
 
   // Send message to AI agents (v2 - main2.py Financial Assistant)
-  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any }> => {
-    const url = `${API_BASE_URL}/chat`;
+  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any, requires_auth?: boolean, auth_url?: string, auth_message?: string }> => {
+    const url = `${API_BASE_URL_V2}/chat`;
     console.log('Making API call to:', url);
     const response = await axios.post(url, {
       user_id: message.user_id,
@@ -98,124 +100,83 @@ export const chatAPI = {
       response: response.data.response_text,
       session_id: response.data.session_id,
       agent_used: 'financial_assistant',
-      timing_info: response.data.timing_info
+      timing_info: response.data.timing_info,
+      requires_auth: response.data.requires_auth,
+      auth_url: response.data.auth_url,
+      auth_message: response.data.auth_message
     };
   },
 
   // Get conversation history
-  getHistory: async (limit = 50, offset = 0) => {
-    const response = await api.get(`/chat/history?limit=${limit}&offset=${offset}`);
-    return response.data;
-  },
-
-  // Clear conversation history
-  clearHistory: async () => {
-    const response = await api.post('/chat/clear-history');
-    return response.data;
-  },
-
-  // Get agent status
-  getAgentStatus: async () => {
-    const response = await api.get('/chat/agents/status');
+  getHistory: async (sessionId?: string) => {
+    const params = sessionId ? { session_id: sessionId } : {};
+    const response = await api.get('/chat/history', { params });
     return response.data;
   },
 };
 
 export const toolsAPI = {
-  // Perform financial calculation
-  calculate: async (calculation: FinancialCalculation): Promise<ToolResponse> => {
-    const response = await api.post('/tools/calculate', calculation);
-    return response.data;
-  },
-
-  // Quick compound interest calculation
-  calculateCompoundInterest: async (params: {
-    principal: number;
-    annual_rate: number;
-    years: number;
-    compounds_per_year?: number;
-  }) => {
-    const response = await api.post('/tools/calculate/compound-interest', null, { params });
-    return response.data;
-  },
-
-  // Quick retirement calculation
-  calculateRetirement: async (params: {
-    current_age: number;
-    retirement_age: number;
-    current_savings: number;
-    monthly_contribution: number;
-    annual_return: number;
-    desired_monthly_income?: number;
-  }) => {
-    const response = await api.post('/tools/calculate/retirement', null, { params });
-    return response.data;
-  },
-
   // Web search
-  webSearch: async (query: string, max_results = 5): Promise<ToolResponse> => {
-    const response = await api.post('/tools/web-search', { query, max_results });
+  webSearch: async (query: string) => {
+    const response = await api.post('/tools/web-search', { query });
     return response.data;
   },
 
-  // Financial search
-  financialSearch: async (query: string, max_results = 5): Promise<ToolResponse> => {
-    const response = await api.post('/tools/financial-search', { query, max_results });
-    return response.data;
-  },
-
-  // Get available calculation types
-  getCalculationTypes: async () => {
-    const response = await api.get('/tools/calculate/types');
-    return response.data;
-  },
-
-  // Get tools status
-  getToolsStatus: async () => {
-    const response = await api.get('/tools/tools/status');
-    return response.data;
-  },
-
-  // Search market data
-  searchMarketData: async (symbol: string, max_results = 3) => {
-    const response = await api.get(`/tools/search/market/${symbol}?max_results=${max_results}`);
+  // Financial calculator
+  calculateFinance: async (calculation: any) => {
+    const response = await api.post('/tools/financial-calculator', calculation);
     return response.data;
   },
 };
 
 export const systemAPI = {
-  // Get system health
-  getHealth: async (): Promise<SystemHealth> => {
-    const response = await axios.get(`${API_BASE_URL}/health`);
-    return response.data;
-  },
-
-  // Get system agent status
-  getSystemStatus: async () => {
-    const response = await axios.get(`${API_BASE_URL}/agents/status`);
+  // Get system health and status
+  getStatus: async (): Promise<SystemInfo> => {
+    const response = await api.get('/system/status');
     return response.data;
   },
 
   // Get API info
-  getApiInfo: async () => {
-    const response = await axios.get(`${API_BASE_URL}/api/info`);
+  getInfo: async () => {
+    const response = await api.get('/');
     return response.data;
   },
 
-  // Demo chat (no auth required)
+  // Demo chat endpoint
   demoChat: async (message: string) => {
-    const response = await axios.post(`${API_BASE_URL}/demo/quick-chat?message=${encodeURIComponent(message)}`);
+    const response = await api.post('/demo/chat', { message });
     return response.data;
   },
 };
 
-// Error handling interceptor
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    throw error;
-  }
-);
+export const authAPI = {
+  // Login with email/password
+  login: async (email: string, password: string) => {
+    const response = await api.post('/auth/login', { email, password });
+    if (response.data.access_token) {
+      localStorage.setItem('auth_token', response.data.access_token);
+    }
+    return response.data;
+  },
+
+  // Register new user
+  register: async (email: string, password: string, name: string) => {
+    const response = await api.post('/auth/register', { email, password, name });
+    return response.data;
+  },
+
+  // Logout
+  logout: async () => {
+    localStorage.removeItem('auth_token');
+    const response = await api.post('/auth/logout');
+    return response.data;
+  },
+
+  // Get current user profile
+  getProfile: async () => {
+    const response = await api.get('/auth/profile');
+    return response.data;
+  },
+};
 
 export default api; 

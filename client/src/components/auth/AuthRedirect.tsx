@@ -10,14 +10,18 @@ interface AuthRedirectProps {
 }
 
 export default function AuthRedirect({ children }: AuthRedirectProps) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, needsOnboarding } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && currentUser) {
-      router.push('/');
+      if (needsOnboarding) {
+        router.push('/onboarding');
+      } else {
+        router.push('/');
+      }
     }
-  }, [currentUser, loading, router]);
+  }, [currentUser, loading, needsOnboarding, router]);
 
   if (loading) {
     return (
