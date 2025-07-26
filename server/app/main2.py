@@ -228,4 +228,4 @@ async def root():
 
 # --- Server Startup ---
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8003, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8002, reload=True)
