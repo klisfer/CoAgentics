@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from utils.timing import start_request_timing, time_operation, log_timing_summary
 
 from dotenv import load_dotenv
@@ -87,6 +87,35 @@ class ChatResponse(BaseModel):
 class SessionResponse(BaseModel):
     session_id: str
     user_id: str
+
+class AgentInfo(BaseModel):
+    agent_id: str
+    name: str
+    status: str
+    current_iteration: int
+    max_iterations: int
+    execution_time: Optional[float] = None
+    capabilities: List[str]
+    enabled: bool
+    priority: int
+    tools_available: int
+
+class ToolInfo(BaseModel):
+    name: str
+    description: str
+    initialized: bool
+    version: str
+
+class SystemSummary(BaseModel):
+    total_agents: int
+    active_agents: int
+    total_tools: int
+    system_status: str
+
+class SystemStatusResponse(BaseModel):
+    agents: List[AgentInfo]
+    tools: Dict[str, ToolInfo]
+    summary: SystemSummary
 
 
 def get_session_service_and_app_name():
@@ -406,6 +435,164 @@ async def health_check():
     }
 
 
+@app.get("/system/status", response_model=SystemStatusResponse)
+async def get_system_status():
+    """Get comprehensive system status including all agents and tools."""
+    global fi_agent, fi_toolset, initialization_error
+    
+    logger.info("System status requested")
+    
+    try:
+        # Define agent information based on our financial advisor structure
+        agents_data = []
+        
+        # Main financial advisor agent
+        if fi_agent:
+            main_agent = AgentInfo(
+                agent_id="financial_advisor",
+                name="Financial Advisor (Main)",
+                status="active" if fi_agent and not initialization_error else "inactive",
+                current_iteration=0,
+                max_iterations=10,
+                execution_time=None,
+                capabilities=[
+                    "financial_planning",
+                    "investment_advice", 
+                    "tax_consultation",
+                    "insurance_guidance",
+                    "budget_analysis",
+                    "goal_setting"
+                ],
+                enabled=True,
+                priority=1,
+                tools_available=len(fi_agent.tools) if fi_agent and hasattr(fi_agent, 'tools') else 0
+            )
+            agents_data.append(main_agent)
+        
+        # Sub-agents
+        sub_agents = [
+            {
+                "agent_id": "tax_consultant_agent",
+                "name": "Tax Consultant",
+                "capabilities": ["tax_planning", "tax_optimization", "compliance"],
+                "priority": 2
+            },
+            {
+                "agent_id": "investment_advisor_agent", 
+                "name": "Investment Advisor",
+                "capabilities": ["portfolio_management", "risk_assessment", "market_analysis"],
+                "priority": 3
+            },
+            {
+                "agent_id": "insurance_advisor_agent",
+                "name": "Insurance Advisor", 
+                "capabilities": ["policy_review", "coverage_analysis", "claims_guidance"],
+                "priority": 4
+            },
+            {
+                "agent_id": "web_search_agent",
+                "name": "Research Assistant",
+                "capabilities": ["market_research", "data_gathering", "trend_analysis"],
+                "priority": 5
+            }
+        ]
+        
+        for sub_agent in sub_agents:
+            agent_info = AgentInfo(
+                agent_id=sub_agent["agent_id"],
+                name=sub_agent["name"],
+                status="active" if not initialization_error else "inactive",
+                current_iteration=0,
+                max_iterations=5,
+                execution_time=None,
+                capabilities=sub_agent["capabilities"],
+                enabled=True,
+                priority=sub_agent["priority"],
+                tools_available=1  # Each sub-agent typically has google_search tool
+            )
+            agents_data.append(agent_info)
+        
+        # Tools information
+        tools_data = {}
+        
+        # MCP Tools from Fi server
+        if fi_toolset:
+            try:
+                mcp_tools = await fi_toolset.get_tools()
+                for i, tool in enumerate(mcp_tools):
+                    tool_name = getattr(tool, 'name', f'mcp_tool_{i}')
+                    tools_data[f"mcp_{tool_name}"] = ToolInfo(
+                        name=tool_name,
+                        description=getattr(tool, 'description', 'Fi MCP server tool'),
+                        initialized=True,
+                        version="1.0.0"
+                    )
+            except Exception as e:
+                logger.warning(f"Could not fetch MCP tools for status: {e}")
+        
+        # Standard tools
+        standard_tools = [
+            {
+                "id": "google_search",
+                "name": "Google Search",
+                "description": "Web search capability for research and data gathering",
+                "initialized": True,
+                "version": "1.0.0"
+            },
+            {
+                "id": "agent_coordination",
+                "name": "Agent Coordination",
+                "description": "Inter-agent communication and task delegation",
+                "initialized": fi_agent is not None,
+                "version": "1.0.0"
+            }
+        ]
+        
+        for tool in standard_tools:
+            tools_data[tool["id"]] = ToolInfo(
+                name=tool["name"],
+                description=tool["description"],
+                initialized=tool["initialized"],
+                version=tool["version"]
+            )
+        
+        # Calculate summary
+        total_agents = len(agents_data)
+        active_agents = len([a for a in agents_data if a.status == "active"])
+        total_tools = len(tools_data)
+        
+        system_status = "operational" if (fi_agent and not initialization_error) else "degraded"
+        
+        summary = SystemSummary(
+            total_agents=total_agents,
+            active_agents=active_agents,
+            total_tools=total_tools,
+            system_status=system_status
+        )
+        
+        logger.info(f"System status: {summary.system_status}, {active_agents}/{total_agents} agents active, {total_tools} tools available")
+        
+        return SystemStatusResponse(
+            agents=agents_data,
+            tools=tools_data,
+            summary=summary
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting system status: {e}", exc_info=True)
+        # Return minimal status even if there's an error
+        return SystemStatusResponse(
+            agents=[],
+            tools={},
+            summary=SystemSummary(
+                total_agents=0,
+                active_agents=0,
+                total_tools=0,
+                system_status="error"
+            )
+        )
+
+
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
@@ -416,6 +603,7 @@ async def root():
         "endpoints": {
             "chat": "/chat - POST - Send a message to the financial assistant",
             "health": "/health - GET - Check API health status",
+            "system/status": "/system/status - GET - Get comprehensive system status",
             "docs": "/docs - GET - API documentation"
         }
     }

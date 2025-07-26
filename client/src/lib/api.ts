@@ -73,6 +73,40 @@ export interface SystemInfo {
   tools: ToolStatus[];
 }
 
+// Enhanced interfaces for comprehensive system status
+export interface AgentInfo {
+  agent_id: string;
+  name: string;
+  status: string;
+  current_iteration: number;
+  max_iterations: number;
+  execution_time?: number;
+  capabilities: string[];
+  enabled: boolean;
+  priority: number;
+  tools_available: number;
+}
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  initialized: boolean;
+  version: string;
+}
+
+export interface SystemSummary {
+  total_agents: number;
+  active_agents: number;
+  total_tools: number;
+  system_status: string;
+}
+
+export interface SystemStatusResponse {
+  agents: AgentInfo[];
+  tools: Record<string, ToolInfo>;
+  summary: SystemSummary;
+}
+
 // API functions
 export const chatAPI = {
   // Send message to AI agents (v1 - original system)
@@ -136,6 +170,18 @@ export const systemAPI = {
   // Get system health and status
   getStatus: async (): Promise<SystemInfo> => {
     const response = await api.get('/system/status');
+    return response.data;
+  },
+
+  // Get comprehensive system status (for AgentStatus component)
+  getSystemStatus: async (): Promise<SystemStatusResponse> => {
+    const url = `${API_BASE_URL_V2}/system/status`;
+    console.log('Fetching system status from:', url);
+    const response = await axios.get(url, {
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
     return response.data;
   },
 
