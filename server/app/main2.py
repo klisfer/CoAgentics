@@ -8,6 +8,8 @@ import traceback
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 from typing import Optional
 
 
@@ -55,7 +57,7 @@ APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT", "fi_mcp_app")
 class ChatRequest(BaseModel):
     user_id: str
     session_id: Optional[str] = None
-    user_message: str = Field(..., description="The user's message text.")  # Fixed: was new_message
+    new_message: str = Field(..., description="The user's message text.")  # Fixed: was new_message
 
 class ChatResponse(BaseModel):
     session_id: str
@@ -191,6 +193,14 @@ app = FastAPI(
     title="Fi Financial Assistant API",
     version="1.0.0",
     lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # React dev server
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # --- Endpoints ---

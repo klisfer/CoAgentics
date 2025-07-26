@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8002'; // Force port 8002 for main2.py
 const API_PREFIX = '/api/v1';
 
 const api = axios.create({
@@ -79,10 +79,26 @@ export const chatAPI = {
     return response.data;
   },
 
-  // Send message to AI agents (v2 - Google ADK-based financial advisor)
-  sendMessageV2: async (message: ChatMessage): Promise<ChatResponse> => {
-    const response = await api.post('/chat/message/v2', message);
-    return response.data;
+  // Send message to AI agents (v2 - main2.py Financial Assistant)
+  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string }): Promise<{ response: string, session_id: string, agent_used?: string }> => {
+    const url = `${API_BASE_URL}/chat`;
+    console.log('Making API call to:', url);
+    const response = await axios.post(url, {
+      user_id: message.user_id,
+      session_id: message.session_id || null,
+      new_message: message.message
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    // Transform response to match expected format
+    return {
+      response: response.data.response_text,
+      session_id: response.data.session_id,
+      agent_used: 'financial_assistant'
+    };
   },
 
   // Get conversation history

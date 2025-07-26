@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Loader2, Settings } from 'lucide-react'
 import { systemAPI, chatAPI } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/contexts/AuthContext'
 import MessageBubble from './MessageBubble'
 import AgentTyping from './AgentTyping'
 
@@ -17,6 +18,7 @@ interface Message {
 }
 
 export default function ChatInterface() {
+  const { currentUser } = useAuth()
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -30,6 +32,7 @@ export default function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false)
   const [apiVersion, setApiVersion] = useState<'v1' | 'v2' | 'demo'>('v2') // Default to v2
   const [showSettings, setShowSettings] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null) // Track session ID
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -40,6 +43,20 @@ export default function ChatInterface() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Clear chat and start new session
+  const clearChat = () => {
+    setMessages([
+      {
+        id: '1',
+        content: "Hello! I'm your CoAgentics AI Financial Assistant. I can help you with financial planning, investment advice, calculations, and market research. What would you like to know?",
+        role: 'assistant',
+        timestamp: new Date(),
+        agent: 'financial_assistant'
+      }
+    ])
+    setSessionId(null) // Reset session ID to start fresh
+  }
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -61,8 +78,18 @@ export default function ChatInterface() {
       // Choose API based on selected version
       switch (apiVersion) {
         case 'v2':
-          // Use v2 endpoint (Google ADK-based financial advisor)
-          response = await chatAPI.sendMessageV2({ message: input.trim() })
+          // Use v2 endpoint (main2.py Financial Assistant)
+          console.log('Sending message with user ID:', currentUser?.uid || 'anonymous_user', 'session ID:', sessionId || 'none (first request)')
+          response = await chatAPI.sendMessageV2({ 
+            message: input.trim(),
+            user_id: currentUser?.uid || 'anonymous_user', // Use actual Firebase user ID
+            session_id: sessionId || undefined // Pass current session ID (undefined for first request)
+          })
+          // Store session ID from response for future requests
+          if (response.session_id && response.session_id !== sessionId) {
+            console.log('Received new session ID:', response.session_id)
+            setSessionId(response.session_id)
+          }
           break
         case 'v1':
           // Use v1 endpoint (original agent system)
@@ -133,16 +160,35 @@ export default function ChatInterface() {
                 <span className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
                   {apiVersion.toUpperCase()}
                 </span>
+                {currentUser && (
+                  <span className="ml-2 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded">
+                    {currentUser.displayName || currentUser.email || 'User'}
+                  </span>
+                )}
+                {sessionId && (
+                  <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
+                    Session: {sessionId.slice(-8)}
+                  </span>
+                )}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Settings"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={clearChat}
+              className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Start New Conversation"
+            >
+              New Chat
+            </button>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Settings"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         
         {/* Settings Panel */}
