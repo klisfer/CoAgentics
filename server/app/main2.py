@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from typing import Optional
+from typing import Optional, Dict, Any
+from utils.timing import start_request_timing, time_operation, log_timing_summary
 
 
 from dotenv import load_dotenv
@@ -32,12 +33,12 @@ from financial_advisor import prompt
 from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
 from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
 from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
-from financial_advisor.sub_agents.clarifying_agent import clarifying_agent
+from financial_advisor.sub_agents.finance_genie_assistant import web_search_agent
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-2.5-pro"
 
 # --- Configuration ---
 load_dotenv()
@@ -62,6 +63,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     response_text: str
+    timing_info: Optional[Dict[str, Any]] = None
 
 class SessionResponse(BaseModel):
     session_id: str
@@ -98,7 +100,7 @@ async def get_agent_async():
             model=MODEL,
             description=(
                 "Acts as the central decision-maker coordinating between specialized finance agents. "
-                "use the below tools first to get information related to user finances:"
+                "use the below tools first to get information related to user finances if user question is related to their finance:"
                 "1.tool to get user new worth - fetch_net_worthtool"
                 "2.tool to get user credit report - fetch_credit_reporttool"
                 "3.tool to get user bank transaction - " 
@@ -116,7 +118,7 @@ async def get_agent_async():
                 AgentTool(agent=investment_advisor_agent),
                 AgentTool(agent=insurance_advisor_agent),
                 toolset,
-                google_search
+                AgentTool(agent=web_search_agent)
             ],
         )
         return financial_coordinator, toolset
@@ -211,6 +213,11 @@ async def chat(request: ChatRequest):
     """Get a response from the Fi financial assistant agent."""
     global fi_agent, initialization_error
     
+    # Start timing the entire request
+    start_request_timing()
+    
+    logger.info(f"🚀 Chat request started - User: {request.user_id}, Session: {request.session_id}, Message: '{request.new_message[:50]}...'")
+    
     if initialization_error:
         raise HTTPException(status_code=503, detail=f"Service unavailable: {initialization_error}")
     
@@ -219,50 +226,61 @@ async def chat(request: ChatRequest):
     
     try:
         # Use vertex AI manager services
-        session_service = vertex_ai_manager.get_session_service()
-        memory_service = vertex_ai_manager.get_memory_service()
+        with time_operation("vertex_ai_service_initialization"):
+            session_service = vertex_ai_manager.get_session_service()
+            memory_service = vertex_ai_manager.get_memory_service()
+        
         session_id = request.session_id
         
         # Get or create session
-        if session_id:
-            try:
-                session = await session_service.get_session(
-                    app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-                )
-                if not session:
-                    raise HTTPException(status_code=404, detail="Session not found.")
-            except Exception as e:
-                logger.error(f"Error getting session: {e}")
-                # Create new session if getting fails
+        with time_operation("session_management"):
+            if session_id:
+                try:
+                    logger.info(f"🔍 Getting existing session: {session_id}")
+                    session = await session_service.get_session(
+                        app_name=APP_NAME, user_id=request.user_id, session_id=session_id
+                    )
+                    if not session:
+                        raise HTTPException(status_code=404, detail="Session not found.")
+                    logger.info(f"✅ Retrieved existing session: {session.id}")
+                except Exception as e:
+                    logger.error(f"❌ Error getting session: {e}")
+                    # Create new session if getting fails
+                    logger.info("🔄 Creating new session due to error")
+                    session = await session_service.create_session(
+                        app_name=APP_NAME, user_id=request.user_id
+                    )
+                    logger.info(f"✅ Created new session: {session.id}")
+            else:
+                logger.info("🆕 Creating new session")
                 session = await session_service.create_session(
                     app_name=APP_NAME, user_id=request.user_id
                 )
-        else:
-            session = await session_service.create_session(
-                app_name=APP_NAME, user_id=request.user_id
-            )
+                logger.info(f"✅ Created new session: {session.id}")
         
         session_id = session.id
         # Use the actual session variables, don't override them
         user_id = request.user_id
         
-        logger.info(f"User Query: '{request.new_message}'")
+        logger.info(f"📝 User Query: '{request.new_message}'")
         
         # Create runner
-        runner = Runner(
-            app_name=APP_NAME,
-            agent=fi_agent,
-            artifact_service=artifacts_service,
-            session_service=session_service,
-            memory_service=memory_service,
-        )
+        with time_operation("runner_initialization"):
+            runner = Runner(
+                app_name=APP_NAME,
+                agent=fi_agent,
+                artifact_service=artifacts_service,
+                session_service=session_service,
+                memory_service=memory_service,
+            )
         
         # Prepare user message
-        content = types.Content(role='user', parts=[types.Part(text=request.new_message)])
+        with time_operation("message_preparation"):
+            content = types.Content(role='user', parts=[types.Part(text=request.new_message)])
         
         # Run agent with timeout
-        logger.info("Running Fi agent...")
-        try:
+        logger.info("🤖 Running Fi agent...")
+        with time_operation("agent_execution"):
             events_async = runner.run_async(
                 session_id=session.id,
                 user_id=request.user_id,
@@ -278,23 +296,30 @@ async def chat(request: ChatRequest):
             
             if not response_text:
                 response_text = "I apologize, but I couldn't generate a response at this time."
-                
-        except Exception as e:
-            logger.error(f"Error running agent: {e}")
-            response_text = "I encountered an error while processing your request. Please try again."
         
         # Update session in memory
-        try:
-            updated_session = await session_service.get_session(
-                app_name=APP_NAME, user_id=request.user_id, session_id=session_id
-            )
-            if updated_session:
-                await memory_service.add_session_to_memory(updated_session)
-        except Exception as e:
-            logger.error(f"Error updating session memory: {e}")
-            # Continue anyway
+        with time_operation("memory_update"):
+            try:
+                logger.info("💾 Updating session memory...")
+                updated_session = await session_service.get_session(
+                    app_name=APP_NAME, user_id=request.user_id, session_id=session_id
+                )
+                if updated_session:
+                    await memory_service.add_session_to_memory(updated_session)
+                    logger.info("✅ Session memory updated")
+            except Exception as e:
+                logger.error(f"❌ Error updating session memory: {e}")
+                # Continue anyway
         
-        return ChatResponse(session_id=session_id, response_text=response_text)
+        # Get timing summary
+        timing_info = log_timing_summary()
+        logger.info(f"🏁 Chat request completed - Total time: {timing_info['total_time']}s")
+        
+        return ChatResponse(
+            session_id=session_id, 
+            response_text=response_text,
+            timing_info=timing_info
+        )
         
     except HTTPException:
         raise

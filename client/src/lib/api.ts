@@ -80,7 +80,7 @@ export const chatAPI = {
   },
 
   // Send message to AI agents (v2 - main2.py Financial Assistant)
-  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string }): Promise<{ response: string, session_id: string, agent_used?: string }> => {
+  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any }> => {
     const url = `${API_BASE_URL}/chat`;
     console.log('Making API call to:', url);
     const response = await axios.post(url, {
@@ -97,7 +97,8 @@ export const chatAPI = {
     return {
       response: response.data.response_text,
       session_id: response.data.session_id,
-      agent_used: 'financial_assistant'
+      agent_used: 'financial_assistant',
+      timing_info: response.data.timing_info
     };
   },
 
