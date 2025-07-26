@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "oceanic-throne-119418",
+  "private_key_id": "a18e9e722dac7a25fabf350850610625a2f1c156",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEugIBADANBgkqhkiG9w0BAQEFAASCBKQwggSgAgEAAoIBAQCX89uxaN0vs/u7\nN/6nzPSQu3eZuxeAc/QlMczMcO16sxBJEnjs03/oxCso83QQrLPrEz4qcao9TJKz\n57e7f3SUZA6GTSnHOTabl5fam2D4U6tuExwa5pxCJEAYhLC6acjGUuPi8hCj+bTp\ntGfSg7RfU3NlcN0SK7+LflySJ1yAZ+MrzKE6KEMpGQJ7AdF463Ar8YJge7kgGKtd\nDROZQ0bi0NLe5r0ZVa4p250hcgMgkH7hFLctvVCCEJIXGkfxaX5wJT7dkISaNc98\nvIXlYEj0qOIKsylmpR7HfrCFtBBAN+en4JmToqtKycNzx4EetWimG176bdAnT2+C\ncYe+tFo5AgMBAAECgf8zfa80rxRE1fi3uIHS2uEFKoGc1olgPeq9r+J2ZM4Uhhk+\nqcPQfNsbRV5awiTSgbN2NU8bkujdXNVZoWvhXY9juYQyfnNpzzlyACy1J3H0tGWj\nJ1aexwasYxxVMqGwiag/jFcs0FpTNorXpwqHi5nTs7Om7Ff9kFWYL3mvDSeLWyM0\nYUVokKZGU7xSbirUv6I7WOBEwFbFnty6fbPu9IPxJK3tQ+iJV8OPireOBLX1TMho\n/jImnDhVieAev+Gv0OwSPlG6wlAKR+aFzodGx+CeUf0hZP2CFGceN4zodhe82TfS\nATRFI1if/refAfUKEN2rqoro01GBc6lV+2jgxQ0CgYEAxa3BnmNUixVb76RdKe8B\n1KdTwviNanoi+hq4hJAO+WCTHSO1ANOkQ71pdalu3tyl0fWLRufya89YlgJLS/fM\n0yTL8Gg2kk7r7ZaPNsqLsU08+Vqscdmc4GqMqynPg9fwtQ18k6Ea530B2isXhX4N\neRuyniEvuKlPVfzkCW6pQJUCgYEAxMiBH3+Em8cU1ecfJyLgHuVRcNzbi9Ahj8Sb\nleYQTc/5eoETPH0FXud8ZqFek7wjgj+QgNEP4qYmxEgVENHtgBluSV+5utFIlQPQ\nM4/1Vkqef1WgjQx09L35o5tOC3OEj8yjZcg0yySRC52aW2WRWFdo3KjwsXFmJ22F\nZCqgVhUCgYAx2zX3DZRYE8YBNdItblNm3+DXTrrT/QPvUmfxPygXq0zPT58qGzbV\nwuLjQx1sZfgIcUZ0VrGkkUIFa4S0H0ZwhlpNQutokTEd1hg+uGztBc74EO9nM3xG\neXkK/luRJBhYgZNG5J4VfkjGTpH7ICSjw+GT0kjn6QPSaxrUai2T1QKBgA2XyAuT\n9GYKT28jIuzCJPcdYg3Iw8WZn+fdbd3h4XhuiE4lAl4oSKmwldBFD1JnKZDCsUmk\np1NBpOXkEMhzp9M0boDVAvBbqobYl5YoOIs4ZlBnasqzdJS/VrItdSunVB3Wxeau\n+K6bnQVPYq0zi+GtUAoGBXJMYgEROKidpSutAoGAX/lOzAnnwKnbZqjPaEd7uPvt\nU4TXW6rCT3aKUhNF0F3+l51zI4fOn7MwiHAD9GYEpu5tNfFTWjlMqzshX7eQalUM\ntZ4LbFLpnUrNe7Ujg2PSzZsNId4mjne1+Ef7RzTSkDuC2DLYH/zjUr2tz/PKvnMa\n31J3LCQvdJ0O2hfC96w=\n-----END PRIVATE KEY-----\n",
+  "client_email": "database-service-account@oceanic-throne-119418.iam.gserviceaccount.com",
+  "client_id": "117755431894242193776",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/database-service-account%40oceanic-throne-119418.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
