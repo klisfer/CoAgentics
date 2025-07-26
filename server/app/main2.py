@@ -32,12 +32,12 @@ from financial_advisor import prompt
 from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
 from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
 from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
-from financial_advisor.sub_agents.clarifying_agent import clarifying_agent
+from financial_advisor.sub_agents.finance_genie_assistant import web_search_agent
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-2.5-pro"
 
 # --- Configuration ---
 load_dotenv()
@@ -98,7 +98,7 @@ async def get_agent_async():
             model=MODEL,
             description=(
                 "Acts as the central decision-maker coordinating between specialized finance agents. "
-                "use the below tools first to get information related to user finances:"
+                "use the below tools first to get information related to user finances if user question is related to their finance:"
                 "1.tool to get user new worth - fetch_net_worthtool"
                 "2.tool to get user credit report - fetch_credit_reporttool"
                 "3.tool to get user bank transaction - " 
@@ -116,7 +116,7 @@ async def get_agent_async():
                 AgentTool(agent=investment_advisor_agent),
                 AgentTool(agent=insurance_advisor_agent),
                 toolset,
-                google_search
+                AgentTool(agent=web_search_agent)
             ],
         )
         return financial_coordinator, toolset
