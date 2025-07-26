@@ -1,9 +1,15 @@
 # fi_fastapi_client.py
+import os
 import uvicorn
 import logging
 import asyncio
+
+from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from typing import Optional
+
+
 from dotenv import load_dotenv
 from google.genai import types
 from google.adk.agents.llm_agent import LlmAgent
@@ -25,6 +31,7 @@ from financial_advisor import prompt
 # from financial_advisor.sub_agents.optimizer_assistant import optimizer_agent
 # from financial_advisor.sub_agents.clarifying_agent import clarifying_agent
 # from financial_advisor.sub_agents.triage_assistant import triage_assitant
+
 from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
 from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
 from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
@@ -33,6 +40,10 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
     StreamableHTTPConnectionParams,
     # SseConnectionParams  # Optional, if needed
 )
+from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
+from google.adk.runners import Runner
+
+
 MODEL = "gemini-2.5-pro"
 
 # --- Configuration ---
@@ -45,6 +56,22 @@ session_service = InMemorySessionService()
 artifacts_service = InMemoryArtifactService()
 fi_agent = None
 fi_toolset = None
+
+APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT")
+
+
+class ChatRequest(BaseModel):
+    user_id: str
+    session_id: Optional[str] = None
+    new_message: str = Field(..., description="The user's message text.")
+
+class ChatResponse(BaseModel):
+    session_id: str
+    response_text: str
+
+class SessionResponse(BaseModel):
+    session_id: str
+    user_id: str
 
 async def get_agent_async():
     """Creates an ADK Agent equipped with tools from the Fi MCP Server."""
@@ -109,9 +136,15 @@ async def get_agent_async():
         logger.error("Try switching between SseConnectionParams and StreamableHTTPConnectionParams")
         raise
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
+
+    # Startup
+    print("Application starting up...")
+
     global fi_agent, fi_toolset
     
     # Startup
@@ -122,7 +155,39 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize Fi MCP client: {e}")
         raise
+
     
+    # Load environment variables from .env file
+    load_dotenv()
+    
+    # Check for credentials before initializing
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        print("ERROR: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.")
+        print("Please run 'gcloud auth application-default login' and then set the variable, for example:")
+        print("export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/application_default_credentials.json")
+        yield
+        return
+
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    
+    if not project_id:
+        print("ERROR: GOOGLE_CLOUD_PROJECT environment variable not set.")
+        print("Please create a .env file in the 'backend' directory with the following content:")
+        print("GOOGLE_CLOUD_PROJECT=your-gcp-project-id-here")
+        # In a real app, you might raise an error or exit
+        yield
+        return
+
+    try:
+        vertex_ai_manager.initialize(project_id=project_id, location=location)
+        print("Vertex AI Manager has been initialized.")
+    except Exception as e:
+        print(f"FATAL: Could not initialize Vertex AI Manager: {e}")
+        # In a real app, you might exit or switch to a fallback
+ 
+    print("Application shutting down...")
+
     yield
     
     # Shutdown
@@ -142,15 +207,32 @@ app = FastAPI(
 )
 
 # --- Endpoint ---
-@app.post("/chat")
-async def chat(user_message: str) -> dict:
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
     """Get a response from the Fi financial assistant agent."""
     global fi_agent
     
     if not fi_agent:
         raise HTTPException(status_code=503, detail="Fi agent not initialized")
+    session_service = vertex_ai_manager.get_session_service()
+    memory_service = vertex_ai_manager.get_memory_service()
+    session_id = request.session_id
     
     try:
+        # 1. Get or create the session
+        if session_id:
+            session = await session_service.get_session(
+                app_name=APP_NAME, user_id=request.user_id, session_id=session_id
+            )
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found.")
+        else:
+            session = await session_service.create_session(
+                app_name=APP_NAME, user_id=request.user_id
+            )
+        
+        session_id = session.id
+
         app_name, user_id, session_id = "fi_mcp_app", "user_123", "session_1"
         
         # Create or get session
@@ -160,18 +242,20 @@ async def chat(user_message: str) -> dict:
             user_id=user_id
         )
         
-        logger.info(f"User Query: '{user_message}'")
+        logger.info(f"User Query: '{request.user_message}'")
         
         # Create runner
         runner = Runner(
             app_name=app_name,
             agent=fi_agent,
             artifact_service=artifacts_service,
-            session_service=session_service,
+            # session_service=session_service,        
+            session_service=vertex_ai_manager.get_session_service(),
+            memory_service=vertex_ai_manager.get_memory_service(),
         )
         
         # Prepare user message
-        content = types.Content(role='user', parts=[types.Part(text=user_message)])
+        content = types.Content(role='user', parts=[types.Part(text=request.user_message)])
         
         # Run agent and collect response
         logger.info("Running Fi agent...")
@@ -189,17 +273,24 @@ async def chat(user_message: str) -> dict:
                     response_text = event.content.parts[0].text
         
         # Get updated session state
-        updated_session = session_service.get_session(
-            app_name=app_name, 
-            user_id=user_id, 
-            session_id=session.id
+        # updated_session = session_service.get_session(
+        #     app_name=app_name, 
+        #     user_id=user_id, 
+        #     session_id=session.id
+        # )
+
+        updated_session = await session_service.get_session(
+            app_name=APP_NAME, user_id=request.user_id, session_id=session_id
         )
+        await memory_service.add_session_to_memory(updated_session)
+
+        return ChatResponse(session_id=session_id, response_text=response_text)
         
-        return {
-            "response": response_text,
-            "session_id": session.id,
-            "user_id": user_id
-        }
+        # return {
+        #     "response": response_text,
+        #     "session_id": session.id,
+        #     "user_id": user_id
+        # }
         
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import Sidebar from '@/components/layout/Sidebar'
 import ChatInterface from '@/components/chat/ChatInterface'
 import FinancialCalculators from '@/components/calculators/FinancialCalculators'
@@ -31,12 +32,14 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="flex-1 overflow-hidden">
-        {renderContent()}
-      </main>
-    </div>
+    <ProtectedRoute>
+      <div className="flex h-screen bg-gray-100">
+        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+        <main className="flex-1 overflow-hidden">
+          {renderContent()}
+        </main>
+      </div>
+    </ProtectedRoute>
   )
 }
 
