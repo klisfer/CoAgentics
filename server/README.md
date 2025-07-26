@@ -4,6 +4,7 @@ A sophisticated agentic AI system for financial intelligence, built with FastAPI
 
 ## 🏗️ Architecture Overview
 
+
 CoAgentics implements a multi-agent architecture designed for financial AI applications:
 
 ### Core Components
