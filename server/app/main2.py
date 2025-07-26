@@ -232,21 +232,14 @@ async def chat(request: ChatRequest):
             )
         
         session_id = session.id
-
-        app_name, user_id, session_id = "fi_mcp_app", "user_123", "session_1"
+        # Use the actual session variables, don't override them
+        user_id = request.user_id
         
-        # Create or get session
-        session = await session_service.create_session(
-            state={}, 
-            app_name=app_name, 
-            user_id=user_id
-        )
-        
-        logger.info(f"User Query: '{request.user_message}'")
+        logger.info(f"User Query: '{request.new_message}'")
         
         # Create runner
         runner = Runner(
-            app_name=app_name,
+            app_name=APP_NAME,
             agent=fi_agent,
             artifact_service=artifacts_service,
             # session_service=session_service,        
@@ -255,7 +248,7 @@ async def chat(request: ChatRequest):
         )
         
         # Prepare user message
-        content = types.Content(role='user', parts=[types.Part(text=request.user_message)])
+        content = types.Content(role='user', parts=[types.Part(text=request.new_message)])
         
         # Run agent and collect response
         logger.info("Running Fi agent...")
