@@ -42,7 +42,8 @@ MODEL = "gemini-2.5-flash"
 
 # --- Configuration ---
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Global variables to store services and agent
