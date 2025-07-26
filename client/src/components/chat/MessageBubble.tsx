@@ -90,7 +90,7 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
               ? "bg-red-50 text-red-900 border border-red-200 rounded-bl-md"
               : "bg-white text-gray-900 border border-gray-200 rounded-bl-md shadow-sm"
         )}>
-          <div className="prose prose-sm max-w-none">
+          <div className={cn("prose prose-sm max-w-none", isUser ? "text-white" : "text-black")}>
             {formatContent(message.content)}
           </div>
         </div>
