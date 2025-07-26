@@ -28,17 +28,17 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.agent_tool import AgentTool
-
+from google.adk.tools import google_search
 from financial_advisor import prompt
 from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
 from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
 from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
-
+from financial_advisor.sub_agents.clarifying_agent import clarifying_agent
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
 
-MODEL = "gemini-2.5-pro"
+MODEL = "gemini-2.5-flash"
 
 # --- Configuration ---
 load_dotenv()
@@ -86,13 +86,14 @@ async def get_agent_async():
         )
         
         # Get tools from the toolset with timeout
-        try:
-            # Add a timeout to prevent hanging
-            tools = await asyncio.wait_for(toolset.get_tools(), timeout=10.0)
-            logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
-        except asyncio.TimeoutError:
-            logger.error("Timeout while fetching tools from MCP server")
-            raise Exception("MCP server connection timeout")
+        # try:
+        #     # Add a timeout to prevent hanging
+        #     tools = await asyncio.wait_for(toolset.get_tools(), timeout=10.0)
+        #     logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
+        #     logger.info(f"Successfully fetched {toolset} toolset from Fi MCP server.")
+        # except asyncio.TimeoutError:
+        #     logger.error("Timeout while fetching tools from MCP server")
+        #     raise Exception("MCP server connection timeout")
         
         financial_coordinator = LlmAgent(
             name="master_financial_planner",
@@ -116,7 +117,8 @@ async def get_agent_async():
                 AgentTool(agent=tax_consultant_agent),
                 AgentTool(agent=investment_advisor_agent),
                 AgentTool(agent=insurance_advisor_agent),
-                toolset
+                toolset,
+                google_search
             ],
         )
         return financial_coordinator, toolset
