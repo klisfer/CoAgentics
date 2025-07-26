@@ -54,6 +54,8 @@ initialization_error = None
 
 # Global in-memory session service instance (to persist across requests)
 global_inmemory_session_service = None
+# Simple session cache for in-memory sessions (as backup if service doesn't persist)
+inmemory_session_cache = {}
 
 APP_NAME = os.environ.get("GOOGLE_CLOUD_PROJECT", "fi_mcp_app")
 
@@ -273,16 +275,19 @@ async def chat(request: ChatRequest):
                     )
                     logger.info(f"✅ Created new Vertex AI session: {session.id}")
             elif session_id and is_inmemory_session:
-                # In-memory session service - use its built-in session management
+                # In-memory session service - use same API as Vertex AI
                 try:
                     logger.info(f"🔍 Looking for existing in-memory session: {session_id}")
                     
-                    # Try to get existing session using the service's built-in method
-                    session = await session_service.get_session(session_id=session_id)
+                    # Try to get existing session using the same API as Vertex AI
+                    session = await session_service.get_session(
+                        app_name=APP_NAME, user_id=request.user_id, session_id=session_id
+                    )
                     if session:
                         logger.info(f"✅ Retrieved existing in-memory session: {session.id}")
+                        logger.info(f"🔍 Debug: Session state contains {len(session.state.get('history', []))} messages")
                     else:
-                        logger.info("🔄 In-memory session not found, creating new one")
+                        logger.warning(f"🔄 In-memory session {session_id} not found, creating new one")
                         session = await session_service.create_session(
                             app_name=APP_NAME, user_id=request.user_id
                         )
