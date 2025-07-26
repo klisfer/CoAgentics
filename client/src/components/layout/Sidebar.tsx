@@ -11,9 +11,12 @@ import {
   TrendingUp,
   PiggyBank,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  LogOut,
+  User
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface SidebarProps {
   activeTab: string
@@ -32,6 +35,15 @@ const navigation = [
 
 export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const { currentUser, logout } = useAuth()
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
 
   return (
     <div className={cn(
@@ -101,6 +113,44 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           })}
         </ul>
       </nav>
+
+      {/* User Profile */}
+      <div className="border-t border-gray-200">
+        {!isCollapsed ? (
+          <div className="p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <User className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm text-gray-900 truncate">
+                  {currentUser?.displayName || currentUser?.email || 'User'}
+                </div>
+                <div className="text-xs text-gray-500 truncate">
+                  {currentUser?.email}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
+        ) : (
+          <div className="p-2">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center p-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Footer */}
       {!isCollapsed && (

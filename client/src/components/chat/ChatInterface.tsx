@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2 } from 'lucide-react'
-import { systemAPI } from '@/lib/api'
+import { Send, Bot, User, Loader2, Settings } from 'lucide-react'
+import { systemAPI, chatAPI } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import MessageBubble from './MessageBubble'
 import AgentTyping from './AgentTyping'
@@ -28,6 +28,8 @@ export default function ChatInterface() {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [apiVersion, setApiVersion] = useState<'v1' | 'v2' | 'demo'>('v2') // Default to v2
+  const [showSettings, setShowSettings] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -54,8 +56,24 @@ export default function ChatInterface() {
     setIsLoading(true)
 
     try {
-      // Use demo API for now (no auth required)
-      const response = await systemAPI.demoChat(input.trim())
+      let response: any
+
+      // Choose API based on selected version
+      switch (apiVersion) {
+        case 'v2':
+          // Use v2 endpoint (Google ADK-based financial advisor)
+          response = await chatAPI.sendMessageV2({ message: input.trim() })
+          break
+        case 'v1':
+          // Use v1 endpoint (original agent system)
+          response = await chatAPI.sendMessage({ message: input.trim() })
+          break
+        case 'demo':
+        default:
+          // Use demo API (no auth required)
+          response = await systemAPI.demoChat(input.trim())
+          break
+      }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -67,11 +85,21 @@ export default function ChatInterface() {
       }
 
       setMessages(prev => [...prev, assistantMessage])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Chat error:', error)
+      
+      // Provide specific error messages based on the API version
+      let errorContent = "I apologize, but I'm having trouble connecting to the AI service. Please try again in a moment."
+      
+      if (apiVersion === 'v2' && error?.response?.status === 503) {
+        errorContent = "The advanced financial advisor (v2) is currently unavailable. Please try switching to v1 or demo mode."
+      } else if (apiVersion !== 'demo' && error?.response?.status === 401) {
+        errorContent = "Authentication required. Please try using demo mode for now."
+      }
+      
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: "I apologize, but I'm having trouble connecting to the AI service. Please try again in a moment.",
+        content: errorContent,
         role: 'assistant',
         timestamp: new Date(),
         agent: 'error'
@@ -93,15 +121,83 @@ export default function ChatInterface() {
     <div className="flex flex-col h-full bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-full">
-            <Bot className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-full">
+              <Bot className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900">CoAgentics AI Assistant</h1>
+              <p className="text-sm text-gray-500">
+                Financial Intelligence & Advisory 
+                <span className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
+                  {apiVersion.toUpperCase()}
+                </span>
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">CoAgentics AI Assistant</h1>
-            <p className="text-sm text-gray-500">Financial Intelligence & Advisory</p>
-          </div>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
         </div>
+        
+        {/* Settings Panel */}
+        {showSettings && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+            <h3 className="text-sm font-medium text-gray-900 mb-3">AI Assistant Version</h3>
+            <div className="space-y-2">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="apiVersion"
+                  value="v2"
+                  checked={apiVersion === 'v2'}
+                  onChange={(e) => setApiVersion(e.target.value as 'v1' | 'v2' | 'demo')}
+                  className="mr-2"
+                />
+                <span className="text-sm">
+                  <strong>V2 - Advanced Financial Advisor</strong>
+                  <br />
+                  <span className="text-gray-600">Multi-agent system with specialized financial planning (requires auth)</span>
+                </span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="apiVersion"
+                  value="v1"
+                  checked={apiVersion === 'v1'}
+                  onChange={(e) => setApiVersion(e.target.value as 'v1' | 'v2' | 'demo')}
+                  className="mr-2"
+                />
+                <span className="text-sm">
+                  <strong>V1 - Standard Assistant</strong>
+                  <br />
+                  <span className="text-gray-600">Original agent system with basic financial capabilities (requires auth)</span>
+                </span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="apiVersion"
+                  value="demo"
+                  checked={apiVersion === 'demo'}
+                  onChange={(e) => setApiVersion(e.target.value as 'v1' | 'v2' | 'demo')}
+                  className="mr-2"
+                />
+                <span className="text-sm">
+                  <strong>Demo Mode</strong>
+                  <br />
+                  <span className="text-gray-600">Basic functionality without authentication required</span>
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Messages */}

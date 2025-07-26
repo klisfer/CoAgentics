@@ -13,9 +13,25 @@ from app.agents.financial.financial_assistant import FinancialAssistant
 from app.services.orchestration.agent_manager import AgentManager
 from app.api.dependencies.auth import get_current_user
 
+# Google ADK imports for v2 endpoint
+try:
+    from google.adk.sessions import InMemorySessionService, Session as ADKSession
+    from google.adk.runners import Runner
+    from google.genai.types import Content, Part
+    from app.financial_advisor import root_agent as finance_agent
+    ADK_AVAILABLE = True
+except ImportError:
+    ADK_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("Google ADK not available. V2 endpoint will be disabled.")
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# Initialize session service for ADK (v2)
+if ADK_AVAILABLE:
+    session_service = InMemorySessionService()
 
 # Pydantic models for request/response
 class ChatMessage(BaseModel):
@@ -105,6 +121,109 @@ async def send_message(
         raise HTTPException(
             status_code=500, 
             detail=f"Error processing message: {str(e)}"
+        )
+
+@router.post("/message/v2", response_model=ChatResponse)
+async def send_message_v2(
+    chat_message: ChatMessage,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Send a message to the Google ADK-based AI agent system (v2)"""
+    if not ADK_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Google ADK not available. Please use the v1 endpoint."
+        )
+    
+    try:
+        # Create session parameters
+        app_name = "coagentics_finance_advisor"
+        user_id = f"user_{current_user.id}"
+        session_id = str(uuid.uuid4())
+        
+        # Initialize the ADK runner
+        runner = Runner(
+            agent=finance_agent,
+            app_name=app_name,
+            session_service=session_service
+        )
+        
+        # Create or get session
+        adk_session = await session_service.create_session(
+            app_name=app_name,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        # Add user context to the session state if available
+        if hasattr(current_user, 'financial_goals') and current_user.financial_goals:
+            adk_session.state['user_financial_goals'] = current_user.financial_goals
+        if hasattr(current_user, 'risk_tolerance') and current_user.risk_tolerance:
+            adk_session.state['user_risk_tolerance'] = current_user.risk_tolerance
+        if hasattr(current_user, 'investment_experience') and current_user.investment_experience:
+            adk_session.state['user_investment_experience'] = current_user.investment_experience
+        
+        # Create user message in ADK format
+        user_message = Content(role="User", parts=[Part(text=chat_message.message)])
+        
+        # Run the agent and get response
+        response_content = ""
+        agent_metadata = {}
+        
+        for event in runner.run(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=user_message
+        ):
+            if hasattr(event, 'content') and hasattr(event.content, 'parts'):
+                if event.content.parts:
+                    response_content = event.content.parts[0].text
+                    break
+        
+        # Get updated session state for metadata
+        updated_session = await session_service.get_session(
+            app_name=app_name, 
+            user_id=user_id, 
+            session_id=session_id
+        )
+        
+        agent_metadata = {
+            "agent_version": "v2",
+            "session_state": updated_session.state if updated_session else {},
+            "app_name": app_name,
+            "model_used": "gemini-2.5-pro"
+        }
+        
+        # Generate conversation ID for database storage
+        conversation_id = str(uuid.uuid4())
+        
+        # Store conversation in background (using existing function)
+        background_tasks.add_task(
+            store_conversation,
+            db,
+            str(current_user.id),
+            session_id,
+            chat_message.message,
+            response_content,
+            agent_metadata,
+            "financial_coordinator_v2"
+        )
+        
+        return ChatResponse(
+            response=response_content,
+            agent_used="financial_coordinator_v2",
+            metadata=agent_metadata,
+            conversation_id=conversation_id,
+            session_id=session_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing chat message v2: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing message with ADK: {str(e)}"
         )
 
 @router.get("/history", response_model=ConversationHistoryResponse)
