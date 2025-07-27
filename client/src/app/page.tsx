@@ -49,7 +49,7 @@ function PlaceholderPage({ title, description }: { title: string; description: s
       <div className="text-center">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">{title}</h1>
         <p className="text-gray-600">{description}</p>
-      </div>
+        </div>
     </div>
   )
 }

@@ -6,7 +6,9 @@ import {
   collection, 
   query, 
   where, 
-  getDocs 
+  getDocs,
+  orderBy,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -44,7 +46,27 @@ export interface UserProfile {
   updatedAt: Date;
 }
 
+export interface ChatMessage {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  timestamp: Date;
+  agent?: string;
+  metadata?: any;
+}
+
+export interface ChatHistory {
+  id: string; // Document ID (session_id)
+  user_id: string;
+  session_id: string;
+  chat_data: ChatMessage[];
+  title?: string; // Optional title for the conversation
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 const USERS_COLLECTION = 'users';
+const CHAT_HISTORY_COLLECTION = 'chat-history';
 
 // Helper function to remove undefined values from objects
 function removeUndefinedValues(obj: any): any {
@@ -133,6 +155,169 @@ export class FirestoreService {
       });
     } catch (error) {
       console.error('Error completing profile:', error);
+      throw error;
+    }
+  }
+
+  // Chat History Methods
+  
+  // Save chat session to Firestore
+  static async saveChatHistory(userId: string, sessionId: string, messages: ChatMessage[], title?: string): Promise<void> {
+    try {
+      const chatDoc = doc(db, CHAT_HISTORY_COLLECTION, sessionId);
+      const now = new Date();
+      
+      // Check if this session already exists
+      const existingDoc = await getDoc(chatDoc);
+      const isNewSession = !existingDoc.exists();
+      
+      console.log(`💾 Saving chat history:`, {
+        userId,
+        sessionId,
+        title,
+        messageCount: messages.length,
+        isNewSession,
+        documentPath: `${CHAT_HISTORY_COLLECTION}/${sessionId}`
+      });
+      
+      const chatHistory: Omit<ChatHistory, 'id'> = {
+        user_id: userId,
+        session_id: sessionId,
+        chat_data: messages,
+        title: title || `Chat ${new Date().toLocaleDateString()}`,
+        createdAt: isNewSession ? now : (existingDoc.data()?.createdAt?.toDate() || now),
+        updatedAt: now,
+      };
+
+      await setDoc(chatDoc, removeUndefinedValues(chatHistory));
+      console.log(`✅ Chat history ${isNewSession ? 'created' : 'updated'} for session: ${sessionId}`);
+      
+      // Verify the save by checking total documents for this user
+      const userQuery = query(
+        collection(db, CHAT_HISTORY_COLLECTION),
+        where('user_id', '==', userId)
+      );
+      const userDocs = await getDocs(userQuery);
+      console.log(`📊 Total chat sessions for user ${userId}: ${userDocs.size}`);
+      
+    } catch (error) {
+      console.error('❌ Error saving chat history:', error);
+      throw error;
+    }
+  }
+
+  // Update existing chat session
+  static async updateChatHistory(sessionId: string, messages: ChatMessage[]): Promise<void> {
+    try {
+      const chatDoc = doc(db, CHAT_HISTORY_COLLECTION, sessionId);
+      const updateData = removeUndefinedValues({
+        chat_data: messages,
+        updatedAt: new Date(),
+      });
+      await updateDoc(chatDoc, updateData);
+      console.log(`Chat history updated for session: ${sessionId}`);
+    } catch (error) {
+      console.error('Error updating chat history:', error);
+      throw error;
+    }
+  }
+
+  // Get all chat sessions for a user
+  static async getUserChatHistory(userId: string): Promise<ChatHistory[]> {
+    try {
+      console.log('🔍 Fetching chat history for user:', userId);
+      
+      // Query to get ALL chat sessions for the user (explicitly no limit)
+      const chatQuery = query(
+        collection(db, CHAT_HISTORY_COLLECTION),
+        where('user_id', '==', userId)
+      );
+      
+      const querySnapshot = await getDocs(chatQuery);
+      const chatHistories: ChatHistory[] = [];
+      
+      console.log('📊 Raw query results:', querySnapshot.size, 'documents found');
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        
+        console.log('📄 Processing document:', doc.id, {
+          title: data.title,
+          messageCount: data.chat_data?.length || 0,
+          updatedAt: data.updatedAt
+        });
+        
+        // Convert message timestamps from Firestore Timestamps to Date objects
+        const chat_data = (data.chat_data || []).map((message: any) => ({
+          ...message,
+          timestamp: message.timestamp?.toDate ? message.timestamp.toDate() : new Date(message.timestamp)
+        }));
+        
+        chatHistories.push({
+          id: doc.id,
+          user_id: data.user_id,
+          session_id: data.session_id,
+          chat_data: chat_data,
+          title: data.title,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        });
+      });
+      
+      // Sort by updatedAt on the client side instead
+      chatHistories.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      
+      console.log('✅ Final chat history results:', chatHistories.length, 'sessions');
+      console.log('📋 Session titles:', chatHistories.map(h => h.title));
+      
+      return chatHistories;
+    } catch (error) {
+      console.error('❌ Error fetching user chat history:', error);
+      throw error;
+    }
+  }
+
+  // Get specific chat session
+  static async getChatHistory(sessionId: string): Promise<ChatHistory | null> {
+    try {
+      const chatDoc = doc(db, CHAT_HISTORY_COLLECTION, sessionId);
+      const docSnap = await getDoc(chatDoc);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        
+        // Convert message timestamps from Firestore Timestamps to Date objects
+        const chat_data = (data.chat_data || []).map((message: any) => ({
+          ...message,
+          timestamp: message.timestamp?.toDate ? message.timestamp.toDate() : new Date(message.timestamp)
+        }));
+        
+        return {
+          id: docSnap.id,
+          user_id: data.user_id,
+          session_id: data.session_id,
+          chat_data: chat_data,
+          title: data.title,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error fetching chat history:', error);
+      throw error;
+    }
+  }
+
+  // Delete chat session
+  static async deleteChatHistory(sessionId: string): Promise<void> {
+    try {
+      const chatDoc = doc(db, CHAT_HISTORY_COLLECTION, sessionId);
+      await deleteDoc(chatDoc);
+      console.log(`Chat history deleted for session: ${sessionId}`);
+    } catch (error) {
+      console.error('Error deleting chat history:', error);
       throw error;
     }
   }
