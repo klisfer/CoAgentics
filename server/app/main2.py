@@ -298,7 +298,7 @@ async def get_agent_async():
         
         # Try StreamableHTTPConnectionParams first
         connection_params = StreamableHTTPConnectionParams(
-            url="http://localhost:8080/mcp/stream"
+            url="https://fi-mcp-server-978710537953.us-central1.run.app/mcp/stream"
         )
         
         # Create the MCPToolset with timeout

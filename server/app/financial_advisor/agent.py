@@ -14,7 +14,7 @@ from .sub_agents.tax_assistant import tax_consultant_agent
 from .sub_agents.investment_assistant import investment_advisor_agent
 from .sub_agents.insurance_assistant import insurance_advisor_agent
 from .sub_agents.budget_agent import budgeting_agent
-from .sub_agents.loan_agent import loan_guardian_agent
+from .sub_agents.loan_agent import loan_guardian_agent_agent
 
 MODEL = "gemini-2.5-pro"
   # Or a deployed URL like https://your-host.com
