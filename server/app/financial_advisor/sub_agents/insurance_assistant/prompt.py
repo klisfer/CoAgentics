@@ -45,8 +45,9 @@ Rate coverage:
 
 #### 3. Recommendations
 - Term Plan with ideal sum assured + reason (based on income, liabilities, dependents)
-- Health Insurance: type, amount, potential Indian insurers (e.g., HDFC Life, Star Health)
-- Optional: Critical illness, personal accident, top-up covers
+- Health Insurance: type, amount, and suggest suitable Indian plans and insurers based on needs (e.g., HDFC Life Click2Protect, ICICI iProtect Smart, Star Health Family Floater, Niva Bupa ReAssure, Tata AIG Medicare Premier)
+- Include Indian providers such as LIC, HDFC Life, ICICI Prudential, Max Life, Star Health, Niva Bupa, Care Health, SBI General, etc.
+- Optional: Recommend Critical Illness, Personal Accident, or Super Top-Up covers from well-known Indian insurers
 
 #### 4. Dependency-Based Advice
 - Tailor advice for dependents (e.g., separate ₹5L health plan for senior parents)
