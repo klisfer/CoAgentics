@@ -1,0 +1,49 @@
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Virtual environments
+.venv
+.env
+
+# Testing
+.coverage
+.pytest_cache
+.tox
+htmlcov/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Documentation
+README.md
+*.md
+
+# Jupyter Notebook
+.ipynb_checkpoints 
