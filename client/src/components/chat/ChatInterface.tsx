@@ -5,9 +5,10 @@ import { Send, Bot, User, Loader2, Settings } from 'lucide-react'
 import { systemAPI, chatAPI } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { FirestoreService } from '@/lib/firestore'
+import { FirestoreService, ChatHistory, ChatMessage } from '@/lib/firestore'
 import MessageBubble from './MessageBubble'
 import AgentTyping from './AgentTyping'
+import ChatHistoryDropdown from './ChatHistoryDropdown'
 
 interface Message {
   id: string
@@ -35,6 +36,8 @@ export default function ChatInterface() {
   const [apiVersion, setApiVersion] = useState<'v1' | 'v2' | 'demo'>('v2') // Default to v2
   const [showSettings, setShowSettings] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null) // Track session ID
+  const [currentChatHistory, setCurrentChatHistory] = useState<ChatHistory | null>(null)
+  const [refreshHistoryTrigger, setRefreshHistoryTrigger] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -51,6 +54,7 @@ export default function ChatInterface() {
     localStorage.removeItem('coagentics_session_id')
     setSessionId(null)
     console.log('🆕 Starting fresh session - cleared any existing session data')
+    console.log('👤 Current user:', currentUser?.uid || 'Not logged in')
   }, [])
 
   // Save session ID to localStorage when it changes (but only for same-session continuity)
@@ -73,7 +77,110 @@ export default function ChatInterface() {
       }
     ])
     setSessionId(null) // Reset session ID to start fresh
+    setCurrentChatHistory(null) // Clear current chat history
     localStorage.removeItem('coagentics_session_id') // Clear from localStorage
+  }
+
+  // Chat History Functions
+  const saveChatHistoryDirectly = async (sessionId: string, messagesToSave: Message[]) => {
+    if (!currentUser?.uid || !sessionId || messagesToSave.length <= 1) {
+      console.log('❌ Skipping direct save - conditions not met')
+      return
+    }
+
+    console.log('🔍 Direct save attempt:', {
+      sessionId,
+      messageCount: messagesToSave.length,
+      userId: currentUser.uid
+    })
+
+    try {
+      // Convert messages to ChatMessage format, filtering out undefined values
+      const chatMessages: ChatMessage[] = messagesToSave.map(msg => {
+        const chatMessage: any = {
+          id: msg.id,
+          content: msg.content,
+          role: msg.role,
+          timestamp: msg.timestamp,
+        }
+        
+        // Only add agent if it's defined
+        if (msg.agent) {
+          chatMessage.agent = msg.agent
+        }
+        
+        // Only add metadata if it's defined
+        if (msg.metadata) {
+          chatMessage.metadata = msg.metadata
+        }
+        
+        return chatMessage as ChatMessage
+      })
+
+      // Generate title from first user message
+      const firstUserMessage = messagesToSave.find(msg => msg.role === 'user')
+      const title = firstUserMessage 
+        ? firstUserMessage.content.substring(0, 50) 
+        : `Chat ${new Date().toLocaleDateString()}`
+
+      if (currentChatHistory && currentChatHistory.session_id === sessionId) {
+        // Update existing chat
+        await FirestoreService.updateChatHistory(sessionId, chatMessages)
+      } else {
+        // Save new chat
+        await FirestoreService.saveChatHistory(currentUser.uid, sessionId, chatMessages, title)
+        // Set as current chat history after saving
+        setCurrentChatHistory({
+          id: sessionId,
+          user_id: currentUser.uid,
+          session_id: sessionId,
+          chat_data: chatMessages,
+          title: title,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      }
+      
+      console.log('✅ Direct chat history save successful')
+      // Trigger refresh of chat history dropdown
+      setRefreshHistoryTrigger(prev => prev + 1)
+    } catch (error) {
+      console.error('❌ Error in direct save:', error)
+    }
+  }
+
+  const saveCurrentChatToFirestore = async () => {
+    if (!currentUser?.uid || !sessionId || messages.length <= 1) {
+      console.log('❌ Skipping save - conditions not met')
+      return
+    }
+
+    await saveChatHistoryDirectly(sessionId, messages)
+  }
+
+  const loadChatHistory = (chatHistory: ChatHistory) => {
+    // Convert ChatMessage[] to Message[]
+    const convertedMessages: Message[] = chatHistory.chat_data.map(chatMsg => ({
+      id: chatMsg.id,
+      content: chatMsg.content,
+      role: chatMsg.role,
+      timestamp: chatMsg.timestamp instanceof Date ? chatMsg.timestamp : new Date(chatMsg.timestamp),
+      agent: chatMsg.agent,
+      metadata: chatMsg.metadata
+    }))
+
+    setMessages(convertedMessages)
+    setSessionId(chatHistory.session_id)
+    setCurrentChatHistory(chatHistory)
+    localStorage.setItem('coagentics_session_id', chatHistory.session_id)
+    console.log('Loaded chat history:', chatHistory.title)
+  }
+
+  const startNewChat = () => {
+    console.log('🆕 Starting new chat')
+    clearChat()
+    // Trigger refresh of chat history dropdown to show updated list
+    setRefreshHistoryTrigger(prev => prev + 1)
   }
 
   const handleSend = async () => {
@@ -119,7 +226,8 @@ export default function ChatInterface() {
           })
           // Store session ID from response for future requests
           if (response.session_id && response.session_id !== sessionId) {
-            console.log('Received new session ID:', response.session_id)
+            console.log('📡 Received new session ID:', response.session_id)
+            console.log('🔄 Previous session ID was:', sessionId || 'none')
             setSessionId(response.session_id)
           }
           // Log timing information
@@ -149,6 +257,15 @@ export default function ChatInterface() {
       }
 
       setMessages(prev => [...prev, assistantMessage])
+      
+      // Save chat history after we have both the session ID and updated messages
+      if (response.session_id && currentUser?.uid) {
+        console.log('💾 Saving chat history with session ID:', response.session_id)
+        // Update messages first, then save
+        const updatedMessages = [...messages, userMessage, assistantMessage]
+        await saveChatHistoryDirectly(response.session_id, updatedMessages)
+      }
+      
     } catch (error: any) {
       console.error('Chat error:', error)
       
@@ -168,6 +285,7 @@ export default function ChatInterface() {
         agent: 'error'
       }
       setMessages(prev => [...prev, errorMessage])
+      
     } finally {
       setIsLoading(false)
     }
@@ -210,6 +328,12 @@ export default function ChatInterface() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <ChatHistoryDropdown
+              onSelectHistory={loadChatHistory}
+              onNewChat={startNewChat}
+              currentSessionId={sessionId || undefined}
+              refreshTrigger={refreshHistoryTrigger}
+            />
             <button
               onClick={clearChat}
               className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
