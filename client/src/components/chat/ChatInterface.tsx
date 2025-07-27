@@ -9,6 +9,7 @@ import { FirestoreService, ChatHistory, ChatMessage } from '@/lib/firestore'
 import MessageBubble from './MessageBubble'
 import AgentTyping from './AgentTyping'
 import ChatHistoryDropdown from './ChatHistoryDropdown'
+import VoiceRecorder from './VoiceRecorder'
 
 interface Message {
   id: string
@@ -38,6 +39,8 @@ export default function ChatInterface() {
   const [sessionId, setSessionId] = useState<string | null>(null) // Track session ID
   const [currentChatHistory, setCurrentChatHistory] = useState<ChatHistory | null>(null)
   const [refreshHistoryTrigger, setRefreshHistoryTrigger] = useState(0)
+  const [isVoiceMode, setIsVoiceMode] = useState(false) // Track if we're processing voice
+  const [voiceError, setVoiceError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -298,6 +301,123 @@ export default function ChatInterface() {
     }
   }
 
+  const handleVoiceRecording = async (audioBlob: Blob) => {
+    if (!currentUser?.uid) {
+      setVoiceError('Please log in to use voice messages')
+      return
+    }
+
+    if (isLoading || isVoiceMode) return
+
+    setIsVoiceMode(true)
+    setVoiceError(null)
+
+    try {
+      console.log('🎤 Processing voice recording:', audioBlob.size, 'bytes')
+      
+      // Add a temporary message showing we're processing the voice
+      const tempMessage: Message = {
+        id: `voice-temp-${Date.now()}`,
+        content: '🎤 Processing voice message...',
+        role: 'user',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, tempMessage])
+
+      // Fetch user profile from Firestore if user is authenticated
+      let userProfile = null
+      if (currentUser?.uid) {
+        try {
+          console.log('Fetching user profile from Firestore for voice message')
+          userProfile = await FirestoreService.getUserProfile(currentUser.uid)
+        } catch (error) {
+          console.warn('Failed to fetch user profile for voice message:', error)
+        }
+      }
+
+      // Send voice message to API
+      const response = await chatAPI.sendVoiceMessageV2({
+        audioBlob,
+        user_id: currentUser.uid,
+        session_id: sessionId || undefined,
+        user_profile: userProfile
+      })
+
+      // Remove the temporary message and add the real messages
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
+
+      // Add user message with transcription
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        content: response.transcription || 'Voice message',
+        role: 'user',
+        timestamp: new Date()
+      }
+
+      // Add assistant response
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: response.response,
+        role: 'assistant',
+        timestamp: new Date(),
+        agent: response.agent_used,
+        timing_info: response.timing_info
+      }
+
+      setMessages(prev => [...prev, userMessage, assistantMessage])
+
+      // Store session ID from response
+      if (response.session_id && response.session_id !== sessionId) {
+        console.log('🎤 Received new session ID from voice:', response.session_id)
+        setSessionId(response.session_id)
+      }
+
+      // Save chat history
+      if (response.session_id && currentUser?.uid) {
+        console.log('💾 Saving voice chat history')
+        const updatedMessages = [...messages, userMessage, assistantMessage]
+        await saveChatHistoryDirectly(response.session_id, updatedMessages)
+      }
+
+      // Log timing information
+      if (response.timing_info) {
+        console.log('⏱️ Voice Backend Timing:', response.timing_info)
+      }
+
+    } catch (error: any) {
+      console.error('Voice message error:', error)
+      
+      // Remove the temporary message
+      setMessages(prev => prev.filter(msg => msg.id.startsWith('voice-temp')))
+      
+      let errorContent = "I'm sorry, I couldn't process your voice message. Please try again or type your message."
+      
+      if (error.response?.status === 503) {
+        errorContent = "The voice service is currently unavailable. Please try typing your message instead."
+      } else if (error.response?.status === 413) {
+        errorContent = "Your voice message is too long. Please try a shorter recording."
+      }
+      
+      setVoiceError(errorContent)
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: errorContent,
+        role: 'assistant',
+        timestamp: new Date(),
+        agent: 'error'
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setIsVoiceMode(false)
+    }
+  }
+
+  const handleVoiceError = (error: string) => {
+    console.error('Voice recording error:', error)
+    setVoiceError(error)
+  }
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* Header */}
@@ -392,6 +512,19 @@ export default function ChatInterface() {
 
       {/* Input */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
+        {/* Voice Error Display */}
+        {voiceError && (
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-600">{voiceError}</p>
+            <button
+              onClick={() => setVoiceError(null)}
+              className="text-xs text-red-500 hover:text-red-700 underline mt-1"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        
         <div className="flex gap-3">
           <div className="flex-1 relative">
             <textarea
@@ -403,25 +536,45 @@ export default function ChatInterface() {
               className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               rows={1}
               style={{ minHeight: '52px', maxHeight: '120px' }}
+              disabled={isVoiceMode}
             />
           </div>
+          
+          {/* Voice Recorder */}
+          <VoiceRecorder
+            onRecordingComplete={handleVoiceRecording}
+            onError={handleVoiceError}
+            disabled={isLoading || isVoiceMode}
+          />
+          
+          {/* Send Button */}
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || isVoiceMode}
             className={cn(
               "px-4 py-3 rounded-lg font-medium transition-colors",
-              !input.trim() || isLoading
+              !input.trim() || isLoading || isVoiceMode
                 ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                 : "bg-blue-600 text-white hover:bg-blue-700"
             )}
           >
-            {isLoading ? (
+            {isLoading || isVoiceMode ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <Send className="w-5 h-5" />
             )}
           </button>
         </div>
+        
+        {/* Voice Mode Indicator */}
+        {isVoiceMode && (
+          <div className="mt-3 text-center">
+            <p className="text-sm text-blue-600 flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Processing voice message...
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
