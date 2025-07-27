@@ -33,6 +33,7 @@ from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
 from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
 from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
 from financial_advisor.sub_agents.finance_genie_assistant import web_search_agent
+from financial_advisor.sub_agents.optimizer_assistant import optimizer_agent
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
@@ -226,6 +227,7 @@ async def get_agent_async():
         investment_advisor_tool = AgentTool(agent=investment_advisor_agent)
         insurance_advisor_tool = AgentTool(agent=insurance_advisor_agent)
         web_search_agent_tool = AgentTool(agent=web_search_agent)
+        #optimizer_agent_tool = AgentTool(agent=optimizer_agent)
         
         # Combine all tools
         all_tools = [
@@ -233,7 +235,8 @@ async def get_agent_async():
             tax_assistant_tool, 
             investment_advisor_tool,
             insurance_advisor_tool,
-            web_search_agent_tool
+            web_search_agent_tool,
+            #optimizer_agent_tool
         ] + tools  # Add MCP tools if available
         
         # Create the main agent

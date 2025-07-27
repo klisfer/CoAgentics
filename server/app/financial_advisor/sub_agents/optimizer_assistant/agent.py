@@ -5,11 +5,11 @@ from google.adk import Agent
 
 from . import prompt
 
-MODEL="gemini-2.5-pro"
+MODEL="gemini-2.5-flash"
 
 optimizer_agent = Agent(
     model=MODEL,
     name="optimizer_agent",
-    instruction=prompt.RISK_ANALYST_PROMPT,
+    instruction=prompt.OPTIMIZER_ANALYST_PROMPT,
     output_key="optimizer_assistant_output",
 )
