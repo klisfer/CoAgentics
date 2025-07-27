@@ -206,7 +206,7 @@ export default function ChatInterface() {
       // Choose API based on selected version
       switch (apiVersion) {
         case 'v2':
-          // Use v2 endpoint (main2.py Financial Assistant)
+          // Use v2 endpoint (main.py Financial Assistant)
           console.log('Sending message with user ID:', currentUser?.uid || 'anonymous_user', 'session ID:', sessionId || 'none (first request)')
           
           // Fetch user profile from Firestore if user is authenticated

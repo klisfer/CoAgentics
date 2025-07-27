@@ -1,7 +1,7 @@
 # 🔧 Fix API Port Issue (8000 vs 8002)
 
 ## 🚨 Problem
-The frontend is making calls to `localhost:8000` instead of `localhost:8002` where the main2.py backend is running.
+The frontend is making calls to `localhost:8000` instead of `localhost:8002` where the main.py backend is running.
 
 ## ✅ Solution Steps
 
@@ -13,7 +13,7 @@ Create `client/.env.local` with the following content:
 # V1 API - Original system (runs on port 8000)
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
-# V2 API - main2.py Financial Assistant (runs on port 8002)  
+# V2 API - main.py Financial Assistant (runs on port 8002)  
 NEXT_PUBLIC_API_URL_V2=http://localhost:8002
 ```
 
@@ -89,7 +89,7 @@ lsof -i :3000
 
 ### Test Backend Directly:
 ```bash
-# Test main2.py backend
+# Test main.py backend
 curl -X POST http://localhost:8002/chat \
   -H "Content-Type: application/json" \
   -d '{"user_id":"test","new_message":"Hello"}'
@@ -113,11 +113,11 @@ cd /path/to/fi-mcp-server
 # Should run on localhost:8080
 ```
 
-### Terminal 2: main2.py Backend
+### Terminal 2: main.py Backend
 ```bash
 cd server
 source venv/bin/activate
-python3 app/main2.py
+python3 app/main.py
 # Should run on localhost:8002
 ```
 
@@ -131,7 +131,7 @@ npm run dev
 ## 🎯 Expected Result
 
 - **V1 API calls** → `http://localhost:8000/api/v1/...` (original system)
-- **V2 API calls** → `http://localhost:8002/chat` (main2.py)
+- **V2 API calls** → `http://localhost:8002/chat` (main.py)
 - **Demo calls** → Use V1 API for simple responses
 
 ## ⚠️ Common Issues
@@ -144,8 +144,8 @@ npm run dev
 3. Try incognito/private browsing
 
 ### Issue: "Connection refused" on 8002
-**Cause:** main2.py not running
-**Fix:** Start main2.py with `python3 app/main2.py`
+**Cause:** main.py not running
+**Fix:** Start main.py with `python3 app/main.py`
 
 ### Issue: API calls work but auth doesn't
 **Cause:** Fi MCP server not running

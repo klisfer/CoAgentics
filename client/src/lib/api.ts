@@ -115,7 +115,7 @@ export const chatAPI = {
     return response.data;
   },
 
-  // Send message to AI agents (v2 - main2.py Financial Assistant)
+  // Send message to AI agents (v2 - main.py Financial Assistant)
   sendMessageV2: async (message: { message: string, user_id: string, session_id?: string, user_profile?: any }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any, requires_auth?: boolean, auth_url?: string, auth_message?: string, transcription?: string }> => {
     const url = `${API_BASE_URL_V2}/api/v2/chat`;
     console.log('Making text API call to:', url);
