@@ -4,10 +4,13 @@ import uvicorn
 import logging
 import asyncio
 import traceback
+import tempfile
+import json
+import io
 
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 
 from typing import Optional, Dict, Any, List
@@ -83,6 +86,7 @@ class ChatResponse(BaseModel):
     session_id: str
     response_text: str
     timing_info: Optional[Dict[str, Any]] = None
+    transcription: Optional[str] = None  # For voice messages
 
 class SessionResponse(BaseModel):
     session_id: str
@@ -139,6 +143,150 @@ def get_session_service_and_app_name():
             global_inmemory_session_service = InMemorySessionService()
             logger.info("Created global in-memory session service")
         return global_inmemory_session_service, APP_NAME, False
+
+
+async def transcribe_audio(audio_file: UploadFile) -> str:
+    """
+    Transcribe audio file to text using Google Cloud Speech-to-Text v2.
+    Uses the Chirp Universal Model for better accuracy.
+    """
+    try:
+        from google.cloud import speech
+        logger.info(f"Transcribing audio: {audio_file.filename}, Content-Type: {audio_file.content_type}, Size: {audio_file.size} bytes")
+        
+        # Initialize Speech client with authentication check
+        try:
+            client = speech.SpeechClient()
+            # Test authentication by making a simple call
+            logger.info("Testing Google Cloud authentication...")
+        except Exception as auth_error:
+            logger.error(f"Google Cloud Speech client initialization failed: {str(auth_error)}")
+            return f"Voice transcription unavailable due to authentication error. Please ensure Google Cloud credentials are properly configured."
+        
+        # Read audio file content
+        audio_content = await audio_file.read()
+        
+        # Reset file pointer for potential future use
+        await audio_file.seek(0)
+        
+        # Convert WebM/Opus to WAV if needed (WebM is not directly supported)
+        # For now, we'll try to process it directly and handle conversion later if needed
+        
+        # Configure audio settings
+        audio_config = speech.RecognitionAudio(content=audio_content)
+        
+        # Configure recognition settings - try auto-detection first for better compatibility
+        config = speech.RecognitionConfig(
+            # Use auto-detection for better format support
+            encoding=speech.RecognitionConfig.AudioEncoding.ENCODING_UNSPECIFIED,
+            language_code="en-US",  # Primary language
+            alternative_language_codes=["en-IN"],  # Alternative languages for Indian users
+            
+            # Use latest model for better accuracy
+            model="latest_long",  # Use latest_long instead of chirp for better compatibility
+            
+            # Enhanced features (only the supported ones)
+            enable_automatic_punctuation=True,
+            
+            # Use enhanced model for better accuracy
+            use_enhanced=True,
+        )
+        
+        logger.info("Sending audio to Google Cloud Speech-to-Text v2...")
+        
+        # Perform synchronous speech recognition with timeout
+        try:
+            # Add timeout to prevent hanging (10 seconds)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, 
+                    lambda: client.recognize(config=config, audio=audio_config)
+                ),
+                timeout=10.0  # 10 second timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error("Google Cloud Speech API timeout after 10 seconds")
+            return "Sorry, voice transcription timed out. Please try a shorter recording or check your internet connection."
+        except Exception as api_error:
+            logger.error(f"Google Cloud Speech API error: {str(api_error)}")
+            
+            # If it's an authentication or quota error, provide helpful message
+            error_str = str(api_error).lower()
+            if "authentication" in error_str or "credentials" in error_str:
+                return "Voice transcription unavailable - Google Cloud authentication required. Please configure your credentials."
+            elif "quota" in error_str or "limit" in error_str:
+                return "Voice transcription temporarily unavailable - API quota exceeded. Please try again later."
+            elif "invalid" in error_str and "audio" in error_str:
+                return "Sorry, this audio format is not supported. Please try recording again."
+            else:
+                return f"Voice transcription error: {str(api_error)[:100]}. Please try again or type your message."
+        
+        # Extract transcription from response
+        transcriptions = []
+        for result in response.results:
+            if result.alternatives:
+                # Get the most confident transcription
+                transcription = result.alternatives[0].transcript
+                confidence = result.alternatives[0].confidence if hasattr(result.alternatives[0], 'confidence') else 0.0
+                transcriptions.append(transcription)
+                logger.info(f"Transcription confidence: {confidence:.2f}")
+        
+        if not transcriptions:
+            logger.warning("No transcription results received from Speech-to-Text")
+            return "Sorry, I couldn't understand the audio. Please try speaking clearly or type your message."
+        
+        # Combine all transcriptions
+        final_transcription = " ".join(transcriptions).strip()
+        
+        logger.info(f"Transcription successful: '{final_transcription[:100]}{'...' if len(final_transcription) > 100 else ''}'")
+        
+        if not final_transcription:
+            return "Sorry, I couldn't understand the audio. Please try speaking clearly or type your message."
+        
+        return final_transcription
+        
+    except ImportError:
+        logger.error("Google Cloud Speech library not installed. Install with: pip install google-cloud-speech")
+        return "Voice transcription service not available. Please install google-cloud-speech library."
+    
+    except Exception as e:
+        logger.error(f"Speech-to-text error: {str(e)}", exc_info=True)
+        
+        # Handle specific errors
+        if "encoding" in str(e).lower() or "audio format" in str(e).lower():
+            logger.warning("Audio format not supported, trying fallback configuration...")
+            
+            # Try fallback configuration for different audio formats
+            try:
+                # Fallback configuration - let Speech-to-Text auto-detect format
+                config_fallback = speech.RecognitionConfig(
+                    encoding=speech.RecognitionConfig.AudioEncoding.ENCODING_UNSPECIFIED,
+                    language_code="en-US",
+                    alternative_language_codes=["en-IN"],
+                    model="chirp",
+                    enable_automatic_punctuation=True,
+                    profanity_filter=True,
+                    use_enhanced=True,
+                )
+                
+                response = client.recognize(config=config_fallback, audio=audio_config)
+                
+                transcriptions = []
+                for result in response.results:
+                    if result.alternatives:
+                        transcriptions.append(result.alternatives[0].transcript)
+                
+                if transcriptions:
+                    final_transcription = " ".join(transcriptions).strip()
+                    logger.info(f"Fallback transcription successful: '{final_transcription[:100]}...'")
+                    return final_transcription
+            
+            except Exception as fallback_error:
+                logger.error(f"Fallback transcription also failed: {str(fallback_error)}")
+        
+        return f"Sorry, I couldn't process your voice message. Please try again or type your message. (Error: {str(e)[:100]})"
 
 
 async def get_or_create_session(session_service, app_name, user_id, session_id=None):
@@ -411,11 +559,18 @@ async def chat(request: ChatRequest):
         timing_info = log_timing_summary()
         logger.info(f"Chat request completed - Total time: {timing_info['total_time']}s")
         
-        return ChatResponse(
-            session_id=session.id, 
-            response_text=response_text,
-            timing_info=timing_info
-        )
+        # Prepare response with optional transcription
+        response_data = {
+            "session_id": session.id,
+            "response_text": response_text,
+            "timing_info": timing_info
+        }
+        
+        # Add transcription if this was a voice message
+        if is_voice_message and transcription:
+            response_data["transcription"] = transcription
+        
+        return ChatResponse(**response_data)
         
     except HTTPException:
         raise
@@ -607,6 +762,178 @@ async def root():
             "docs": "/docs - GET - API documentation"
         }
     }
+
+@app.post("/api/v2/chat", response_model=ChatResponse)
+async def chat_with_voice(
+    user_id: str = Form(...),
+    session_id: Optional[str] = Form(None),
+    user_profile: Optional[str] = Form(None),  # JSON string
+    user_message: Optional[str] = Form(None),  # For text messages
+    audio: Optional[UploadFile] = File(None)   # For voice messages
+):
+    """Get a response from the Fi financial assistant agent with support for voice messages."""
+    global fi_agent, initialization_error
+    
+    # Start timing the entire request
+    start_request_timing()
+    
+    # Validate input - either text message or audio, but not both
+    if not user_message and not audio:
+        raise HTTPException(status_code=400, detail="Either user_message or audio file must be provided")
+    
+    if user_message and audio:
+        raise HTTPException(status_code=400, detail="Cannot provide both user_message and audio file")
+    
+    # Parse user profile if provided
+    parsed_user_profile = None
+    if user_profile:
+        try:
+            parsed_user_profile = json.loads(user_profile)
+        except json.JSONDecodeError:
+            logger.warning("Invalid user_profile JSON provided, ignoring")
+    
+    # Determine message type and content
+    is_voice_message = audio is not None
+    display_message = "Voice message" if is_voice_message else user_message[:50]
+    
+    logger.info(f"Chat request started - User: {user_id}, Session: {session_id}, Type: {'Voice' if is_voice_message else 'Text'}, Message: '{display_message}...'")
+    
+    if initialization_error:
+        raise HTTPException(status_code=503, detail=f"Service unavailable: {initialization_error}")
+    
+    if not fi_agent:
+        raise HTTPException(status_code=503, detail="Fi agent not initialized")
+    
+    try:
+        # Get session service and app name
+        with time_operation("session_service_initialization"):
+            session_service, app_name, is_vertex_ai = get_session_service_and_app_name()
+        
+        # Get or create session
+        with time_operation("session_management"):
+            session = await get_or_create_session(
+                session_service=session_service,
+                app_name=app_name,
+                user_id=user_id,
+                session_id=session_id
+            )
+        
+        # Process voice message if audio is provided
+        final_message = user_message
+        transcription = None
+        
+        if is_voice_message:
+            with time_operation("audio_transcription"):
+                logger.info(f"Processing voice message - File: {audio.filename}, Size: {audio.size} bytes, Content-Type: {audio.content_type}")
+                
+                # TODO: Implement speech-to-text transcription
+                # For now, we'll use a placeholder
+                transcription = await transcribe_audio(audio)
+                final_message = transcription
+                
+                logger.info(f"Transcription completed: '{transcription[:100]}...'")
+        
+        logger.info(f"Final message to process: '{final_message[:100]}...'")
+        
+        # Enhance message with user profile for persona
+        enhanced_message = final_message
+        if parsed_user_profile:
+            # Add user context to help the AI provide personalized responses
+            user_context = f"User Profile Context: "
+            if parsed_user_profile.get('name'):
+                user_context += f"Name: {parsed_user_profile['name']}, "
+            if parsed_user_profile.get('age'):
+                user_context += f"Age: {parsed_user_profile['age']}, "
+            if parsed_user_profile.get('monthlyIncome'):
+                user_context += f"Monthly Income: ₹{parsed_user_profile['monthlyIncome']}, "
+            if parsed_user_profile.get('employmentStatus'):
+                user_context += f"Employment: {parsed_user_profile['employmentStatus']}, "
+            if parsed_user_profile.get('maritalStatus'):
+                user_context += f"Marital Status: {parsed_user_profile['maritalStatus']}, "
+            if parsed_user_profile.get('location'):
+                user_context += f"Location: {parsed_user_profile['location']}, "
+            
+            # Add context before the user's actual message
+            enhanced_message = f"{user_context.rstrip(', ')}\n\nUser Question: {final_message}"
+            logger.info(f"Enhanced message with user profile context: {len(enhanced_message)} chars")
+        
+        # Log user profile data if provided
+        if parsed_user_profile:
+            logger.info(f"User Profile Data received:")
+            logger.info(f"  Name: {parsed_user_profile.get('name', 'N/A')}")
+            logger.info(f"  Age: {parsed_user_profile.get('age', 'N/A')}")
+            logger.info(f"  Gender: {parsed_user_profile.get('gender', 'N/A')}")
+            logger.info(f"  Marital Status: {parsed_user_profile.get('maritalStatus', 'N/A')}")
+            logger.info(f"  Employment Status: {parsed_user_profile.get('employmentStatus', 'N/A')}")
+            logger.info(f"  Monthly Income: ₹{parsed_user_profile.get('monthlyIncome', 'N/A')}")
+            logger.info(f"  Industry Type: {parsed_user_profile.get('industryType', 'N/A')}")
+            logger.info(f"  Location: {parsed_user_profile.get('location', 'N/A')}")
+            logger.info(f"  Dependents: {parsed_user_profile.get('dependents', 'N/A')}")
+            logger.info(f"  Kids Count: {parsed_user_profile.get('kidsCount', 'N/A')}")
+            logger.info(f"  Insurance: {parsed_user_profile.get('insurance', 'N/A')}")
+            logger.info(f"  Insurance Coverage: {parsed_user_profile.get('insuranceCoverage', 'N/A')}")
+        else:
+            logger.info("No user profile data provided in request")
+        
+        # Create runner
+        with time_operation("runner_initialization"):
+            runner = Runner(
+                app_name=app_name,
+                agent=fi_agent,
+                artifact_service=artifacts_service,
+                session_service=session_service,
+            )
+        
+        # Prepare user message with enhanced context
+        with time_operation("message_preparation"):
+            content = types.Content(role='user', parts=[types.Part(text=enhanced_message)])
+        
+        # Run agent with timeout
+        logger.info("Running Fi agent...")
+        with time_operation("agent_execution"):
+            events_async = runner.run_async(
+                session_id=session.id,
+                user_id=user_id,
+                new_message=content
+            )
+            
+            response_text = ""
+            async for event in events_async:
+                logger.info(f"Event received: {type(event)}")
+                if hasattr(event, 'content') and hasattr(event.content, 'parts'):
+                    if event.content.parts and hasattr(event.content.parts[0], 'text'):
+                        response_text = event.content.parts[0].text
+            
+            if not response_text:
+                response_text = "I apologize, but I couldn't generate a response at this time."
+        
+        # Update session in memory (background task - don't wait for it)
+        async def update_session_memory_background():
+            """Background task to update session memory without blocking response."""
+            try:
+                logger.info("Background: Session memory update skipped (memory service disabled)")
+            except Exception as e:
+                logger.error(f"Background: Error updating session memory: {e}")
+        
+        # Start background task but don't wait for it
+        asyncio.create_task(update_session_memory_background())
+        
+        # Get timing summary
+        timing_info = log_timing_summary()
+        logger.info(f"Chat request completed - Total time: {timing_info['total_time']}s")
+        
+        return ChatResponse(
+            session_id=session.id, 
+            response_text=response_text,
+            timing_info=timing_info
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 
 
 # --- Server Startup ---
