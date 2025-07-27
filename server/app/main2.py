@@ -36,7 +36,7 @@ from financial_advisor.sub_agents.finance_genie_assistant import web_search_agen
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-2.5-pro"
 
 # --- Configuration ---
 load_dotenv()
@@ -361,8 +361,24 @@ async def chat(request: ChatRequest):
             logger.info(f"  Kids Count: {request.user_profile.kidsCount}")
             logger.info(f"  Insurance: {request.user_profile.insurance}")
             logger.info(f"  Insurance Coverage: {request.user_profile.insuranceCoverage}")
+            profile = request.user_profile      
+            user_profile_str = (
+            f"Name: {profile.name}\n"
+            f"Age: {profile.age}\n"
+            f"Gender: {profile.gender}\n"
+            f"Marital Status: {profile.maritalStatus}\n"
+            f"Employment Status: {profile.employmentStatus}\n"
+            f"Monthly Income: ₹{profile.monthlyIncome}\n"
+            f"Industry Type: {profile.industryType}\n"
+            f"Location: {profile.location}\n"
+            f"Dependents: {profile.dependents}\n"
+            f"Kids Count: {profile.kidsCount}\n"
+            f"Insurance: {profile.insurance}\n"
+            f"Insurance Coverage: {profile.insuranceCoverage}"
+        )
         else:
             logger.info("No user profile data provided in request")
+            user_profile_str = "User profile information is not available."
         
         # Create runner
         with time_operation("runner_initialization"):
@@ -375,7 +391,10 @@ async def chat(request: ChatRequest):
         
         # Prepare user message
         with time_operation("message_preparation"):
-            content = types.Content(role='user', parts=[types.Part(text=request.user_message)])
+            content = types.Content(role='user', parts=[types.Part(text=(
+                f"user info:\n{user_profile_str}\n\n"
+                f"Current user question: {request.user_message}"
+            ))])
         
         # Run agent with timeout
         logger.info("Running Fi agent...")
