@@ -18,6 +18,7 @@ from utils.timing import start_request_timing, time_operation, log_timing_summar
 
 from dotenv import load_dotenv
 from google.genai import types
+import google.generativeai as genai
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -147,21 +148,14 @@ def get_session_service_and_app_name():
 
 async def transcribe_audio(audio_file: UploadFile) -> str:
     """
-    Transcribe audio file to text using Google Cloud Speech-to-Text v2.
-    Uses the Chirp Universal Model for better accuracy.
+    Process audio file directly using Gemini 2.5 Pro model.
+    Gemini can handle audio input natively without needing speech-to-text conversion.
     """
     try:
-        from google.cloud import speech
-        logger.info(f"Transcribing audio: {audio_file.filename}, Content-Type: {audio_file.content_type}, Size: {audio_file.size} bytes")
+        import base64
+        import google.generativeai as genai
         
-        # Initialize Speech client with authentication check
-        try:
-            client = speech.SpeechClient()
-            # Test authentication by making a simple call
-            logger.info("Testing Google Cloud authentication...")
-        except Exception as auth_error:
-            logger.error(f"Google Cloud Speech client initialization failed: {str(auth_error)}")
-            return f"Voice transcription unavailable due to authentication error. Please ensure Google Cloud credentials are properly configured."
+        logger.info(f"Processing audio with Gemini: {audio_file.filename}, Content-Type: {audio_file.content_type}, Size: {audio_file.size} bytes")
         
         # Read audio file content
         audio_content = await audio_file.read()
@@ -169,124 +163,89 @@ async def transcribe_audio(audio_file: UploadFile) -> str:
         # Reset file pointer for potential future use
         await audio_file.seek(0)
         
-        # Convert WebM/Opus to WAV if needed (WebM is not directly supported)
-        # For now, we'll try to process it directly and handle conversion later if needed
+        # Configure Gemini model
+        model = genai.GenerativeModel("gemini-2.5-pro")
         
-        # Configure audio settings
-        audio_config = speech.RecognitionAudio(content=audio_content)
+        # Determine MIME type based on file extension and content type
+        mime_type = "audio/webm"  # Default for WebM recordings from browser
+        if audio_file.content_type:
+            if "mpeg" in audio_file.content_type or "mp3" in audio_file.content_type:
+                mime_type = "audio/mpeg"
+            elif "wav" in audio_file.content_type:
+                mime_type = "audio/wav"
+            elif "webm" in audio_file.content_type:
+                mime_type = "audio/webm"
+            elif "ogg" in audio_file.content_type:
+                mime_type = "audio/ogg"
         
-        # Configure recognition settings - try auto-detection first for better compatibility
-        config = speech.RecognitionConfig(
-            # Use auto-detection for better format support
-            encoding=speech.RecognitionConfig.AudioEncoding.ENCODING_UNSPECIFIED,
-            language_code="en-US",  # Primary language
-            alternative_language_codes=["en-IN"],  # Alternative languages for Indian users
-            
-            # Use latest model for better accuracy
-            model="latest_long",  # Use latest_long instead of chirp for better compatibility
-            
-            # Enhanced features (only the supported ones)
-            enable_automatic_punctuation=True,
-            
-            # Use enhanced model for better accuracy
-            use_enhanced=True,
-        )
+        logger.info(f"Using MIME type: {mime_type}")
         
-        logger.info("Sending audio to Google Cloud Speech-to-Text v2...")
+        # Create audio part for Gemini
+        audio_part = {
+            "mime_type": mime_type,
+            "data": audio_content
+        }
         
-        # Perform synchronous speech recognition with timeout
+        # Create prompt for audio transcription
+        prompt = """Please transcribe the audio content to text. 
+        
+        Instructions:
+        - Provide only the transcribed text, no additional commentary
+        - Maintain natural punctuation and formatting
+        - If the audio is unclear, provide your best interpretation
+        - If you cannot understand the audio, respond with "Could not understand the audio clearly"
+        
+        Transcription:"""
+        
+        logger.info("Sending audio to Gemini 2.5 Pro...")
+        
+        # Generate content with timeout
         try:
-            # Add timeout to prevent hanging (10 seconds)
             import asyncio
-            loop = asyncio.get_event_loop()
             response = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None, 
-                    lambda: client.recognize(config=config, audio=audio_config)
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        model.generate_content,
+                        [prompt, audio_part]
+                    )
                 ),
-                timeout=10.0  # 10 second timeout
+                timeout=15.0  # 15 second timeout for Gemini
             )
-        except asyncio.TimeoutError:
-            logger.error("Google Cloud Speech API timeout after 10 seconds")
-            return "Sorry, voice transcription timed out. Please try a shorter recording or check your internet connection."
-        except Exception as api_error:
-            logger.error(f"Google Cloud Speech API error: {str(api_error)}")
             
-            # If it's an authentication or quota error, provide helpful message
+            # Extract transcription from response
+            transcription = response.text.strip()
+            
+            if not transcription:
+                logger.warning("Gemini returned empty transcription")
+                return "Could not transcribe the audio - no text detected"
+            
+            logger.info(f"Gemini transcription successful: '{transcription[:100]}...'")
+            return transcription
+            
+        except asyncio.TimeoutError:
+            logger.error("Gemini audio processing timeout after 15 seconds")
+            return "Sorry, voice processing timed out. Please try a shorter recording or check your internet connection."
+        except Exception as api_error:
+            logger.error(f"Gemini API error: {str(api_error)}")
+            
+            # Handle common errors
             error_str = str(api_error).lower()
             if "authentication" in error_str or "credentials" in error_str:
-                return "Voice transcription unavailable - Google Cloud authentication required. Please configure your credentials."
+                return "Voice processing unavailable - Google Cloud authentication required. Please configure your credentials."
             elif "quota" in error_str or "limit" in error_str:
-                return "Voice transcription temporarily unavailable - API quota exceeded. Please try again later."
-            elif "invalid" in error_str and "audio" in error_str:
-                return "Sorry, this audio format is not supported. Please try recording again."
+                return "Voice processing temporarily unavailable - API quota exceeded. Please try again later."
+            elif "unsupported" in error_str:
+                return "Audio format not supported. Please try recording again with a different format."
             else:
-                return f"Voice transcription error: {str(api_error)[:100]}. Please try again or type your message."
-        
-        # Extract transcription from response
-        transcriptions = []
-        for result in response.results:
-            if result.alternatives:
-                # Get the most confident transcription
-                transcription = result.alternatives[0].transcript
-                confidence = result.alternatives[0].confidence if hasattr(result.alternatives[0], 'confidence') else 0.0
-                transcriptions.append(transcription)
-                logger.info(f"Transcription confidence: {confidence:.2f}")
-        
-        if not transcriptions:
-            logger.warning("No transcription results received from Speech-to-Text")
-            return "Sorry, I couldn't understand the audio. Please try speaking clearly or type your message."
-        
-        # Combine all transcriptions
-        final_transcription = " ".join(transcriptions).strip()
-        
-        logger.info(f"Transcription successful: '{final_transcription[:100]}{'...' if len(final_transcription) > 100 else ''}'")
-        
-        if not final_transcription:
-            return "Sorry, I couldn't understand the audio. Please try speaking clearly or type your message."
-        
-        return final_transcription
+                return f"Voice processing error: {str(api_error)}"
         
     except ImportError:
-        logger.error("Google Cloud Speech library not installed. Install with: pip install google-cloud-speech")
-        return "Voice transcription service not available. Please install google-cloud-speech library."
+        logger.error("Google Generative AI library not installed. Install with: pip install google-generativeai")
+        return "Voice processing service not available. Please install google-generativeai library."
     
     except Exception as e:
-        logger.error(f"Speech-to-text error: {str(e)}", exc_info=True)
-        
-        # Handle specific errors
-        if "encoding" in str(e).lower() or "audio format" in str(e).lower():
-            logger.warning("Audio format not supported, trying fallback configuration...")
-            
-            # Try fallback configuration for different audio formats
-            try:
-                # Fallback configuration - let Speech-to-Text auto-detect format
-                config_fallback = speech.RecognitionConfig(
-                    encoding=speech.RecognitionConfig.AudioEncoding.ENCODING_UNSPECIFIED,
-                    language_code="en-US",
-                    alternative_language_codes=["en-IN"],
-                    model="chirp",
-                    enable_automatic_punctuation=True,
-                    profanity_filter=True,
-                    use_enhanced=True,
-                )
-                
-                response = client.recognize(config=config_fallback, audio=audio_config)
-                
-                transcriptions = []
-                for result in response.results:
-                    if result.alternatives:
-                        transcriptions.append(result.alternatives[0].transcript)
-                
-                if transcriptions:
-                    final_transcription = " ".join(transcriptions).strip()
-                    logger.info(f"Fallback transcription successful: '{final_transcription[:100]}...'")
-                    return final_transcription
-            
-            except Exception as fallback_error:
-                logger.error(f"Fallback transcription also failed: {str(fallback_error)}")
-        
-        return f"Sorry, I couldn't process your voice message. Please try again or type your message. (Error: {str(e)[:100]})"
+        logger.error(f"Voice processing error: {str(e)}", exc_info=True)
+        return f"Sorry, there was an error processing your voice message: {str(e)[:100]}. Please try again or type your message."
 
 
 async def get_or_create_session(session_service, app_name, user_id, session_id=None):
