@@ -884,7 +884,8 @@ async def chat_with_voice(
         return ChatResponse(
             session_id=session.id, 
             response_text=response_text,
-            timing_info=timing_info
+            timing_info=timing_info,
+            transcription=transcription  # Include the transcription for voice messages
         )
         
     except HTTPException:
