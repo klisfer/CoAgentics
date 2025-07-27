@@ -116,19 +116,25 @@ export const chatAPI = {
   },
 
   // Send message to AI agents (v2 - main2.py Financial Assistant)
-  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string, user_profile?: any }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any, requires_auth?: boolean, auth_url?: string, auth_message?: string }> => {
-    const url = `${API_BASE_URL_V2}/chat`;
-    console.log('Making API call to:', url);
+  sendMessageV2: async (message: { message: string, user_id: string, session_id?: string, user_profile?: any }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any, requires_auth?: boolean, auth_url?: string, auth_message?: string, transcription?: string }> => {
+    const url = `${API_BASE_URL_V2}/api/v2/chat`;
+    console.log('Making text API call to:', url);
     console.log('User profile being sent:', message.user_profile);
     
-    const response = await axios.post(url, {
-      user_id: message.user_id,
-      session_id: message.session_id || null,
-      user_message: message.message,
-      user_profile: message.user_profile || null
-    }, {
+    // Create FormData to match the unified endpoint format
+    const formData = new FormData();
+    formData.append('user_id', message.user_id);
+    formData.append('user_message', message.message);
+    if (message.session_id) {
+      formData.append('session_id', message.session_id);
+    }
+    if (message.user_profile) {
+      formData.append('user_profile', JSON.stringify(message.user_profile));
+    }
+    
+    const response = await axios.post(url, formData, {
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'multipart/form-data',
       }
     });
     
@@ -140,7 +146,48 @@ export const chatAPI = {
       timing_info: response.data.timing_info,
       requires_auth: response.data.requires_auth,
       auth_url: response.data.auth_url,
-      auth_message: response.data.auth_message
+      auth_message: response.data.auth_message,
+      transcription: response.data.transcription
+    };
+  },
+
+  // Send voice message to AI agents (v2 - uses the unified endpoint)
+  sendVoiceMessageV2: async (params: { 
+    audioBlob: Blob, 
+    user_id: string, 
+    session_id?: string, 
+    user_profile?: any 
+  }): Promise<{ response: string, session_id: string, agent_used?: string, timing_info?: any, transcription?: string }> => {
+    const url = `${API_BASE_URL_V2}/api/v2/chat`;
+    console.log('Making voice API call to:', url);
+    console.log('Audio blob size:', params.audioBlob.size, 'bytes');
+    console.log('User profile being sent:', params.user_profile);
+    
+    // Create FormData for multipart upload
+    const formData = new FormData();
+    formData.append('audio', params.audioBlob, 'voice-message.webm');
+    formData.append('user_id', params.user_id);
+    if (params.session_id) {
+      formData.append('session_id', params.session_id);
+    }
+    if (params.user_profile) {
+      formData.append('user_profile', JSON.stringify(params.user_profile));
+    }
+    
+    const response = await axios.post(url, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000, // 30 second timeout for voice processing
+    });
+    
+    // Transform response to match expected format
+    return {
+      response: response.data.response_text,
+      session_id: response.data.session_id,
+      agent_used: 'financial_assistant',
+      timing_info: response.data.timing_info,
+      transcription: response.data.transcription,
     };
   },
 
