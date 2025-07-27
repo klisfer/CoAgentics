@@ -37,7 +37,6 @@ from financial_advisor.sub_agents.tax_assistant import tax_consultant_agent
 from financial_advisor.sub_agents.investment_assistant import investment_advisor_agent
 from financial_advisor.sub_agents.insurance_assistant import insurance_advisor_agent
 from financial_advisor.sub_agents.finance_genie_assistant import web_search_agent
-from financial_advisor.sub_agents.optimizer_assistant import optimizer_agent
 from services.context.vertex_ai_session_manager import vertex_ai_manager, VertexAIManager
 from google.adk.runners import Runner
 
@@ -293,10 +292,16 @@ async def get_or_create_session(session_service, app_name, user_id, session_id=N
 
 async def get_agent_async():
     """Creates an ADK Agent equipped with tools from the Fi MCP Server."""
+    tools = []
+    toolset = None
+    
+    # Try to connect to MCP server, but don't fail if it's unavailable
     try:
         logger.info("Attempting to connect to Fi MCP server...")
         
         # Try StreamableHTTPConnectionParams first
+        #mcp_server_url = os.environ.get("MCP_SERVER_URL", "http://localhost:8080/mcp/stream")
+        #logger.info(f"Connecting to MCP server at: {mcp_server_url}")
         connection_params = StreamableHTTPConnectionParams(
             url="https://fi-mcp-server-978710537953.us-central1.run.app/mcp/stream"
         )
@@ -310,14 +315,14 @@ async def get_agent_async():
         # Get tools from the toolset with timeout
         try:
             # Add a timeout to prevent hanging
-            tools = await asyncio.wait_for(toolset.get_tools(), timeout=10.0)
+            tools = await asyncio.wait_for(toolset.get_tools(), timeout=5.0)
             logger.info(f"Successfully fetched {len(tools)} tools from Fi MCP server.")
             
             if not tools:
                 logger.warning("No tools were returned from Fi MCP server")
                 tools = []
-            
-            logger.info(f"Successfully fetched {toolset} toolset from Fi MCP server.")
+            else:
+                logger.info(f"Successfully fetched {toolset} toolset from Fi MCP server.")
             
         except asyncio.TimeoutError:
             logger.error("Timeout while fetching tools from Fi MCP server")
@@ -327,8 +332,15 @@ async def get_agent_async():
             logger.error(f"Error fetching tools from Fi MCP server: {e}")
             tools = []
             toolset = None
-        
-        # Create the agent with available tools
+    
+    except Exception as e:
+        logger.error(f"Failed to connect to Fi MCP server: {e}")
+        # Continue without MCP tools
+        tools = []
+        toolset = None
+    
+    # Create the agent with available tools (with or without MCP)
+    try:
         # web_search_tool = google_search
         tax_assistant_tool = AgentTool(agent=tax_consultant_agent)
         investment_advisor_tool = AgentTool(agent=investment_advisor_agent)
@@ -345,6 +357,8 @@ async def get_agent_async():
             web_search_agent_tool,
             #optimizer_agent_tool
         ] + tools  # Add MCP tools if available
+        
+        logger.info(f"Creating agent with {len(all_tools)} tools ({len(tools)} from MCP)")
         
         # Create the main agent
         fi_agent = LlmAgent(

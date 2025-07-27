@@ -211,6 +211,30 @@ export const toolsAPI = {
     const response = await api.post('/tools/financial-calculator', calculation);
     return response.data;
   },
+
+  // Compound interest calculator
+  calculateCompoundInterest: async (data: any) => {
+    const response = await api.post('/tools/financial-calculator', {
+      calculation_type: 'compound_interest',
+      parameters: data
+    });
+    return response.data;
+  },
+
+  // Retirement calculator
+  calculateRetirement: async (data: any) => {
+    const response = await api.post('/tools/financial-calculator', {
+      calculation_type: 'retirement',
+      parameters: data
+    });
+    return response.data;
+  },
+
+  // Generic calculator
+  calculate: async (calculation: any) => {
+    const response = await api.post('/tools/financial-calculator', calculation);
+    return response.data;
+  },
 };
 
 export const systemAPI = {
