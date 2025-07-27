@@ -66,7 +66,7 @@ steps:
       - '--cpu=2'
       - '--min-instances=0'
       - '--max-instances=10'
-      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,MCP_SERVER_URL=https://fi-mcp-server-978710537953.us-central1.run.app/mcp/stream'
     id: 'deploy-backend'
     waitFor: ['push-backend', 'deploy-mcp-server']
 

@@ -15,7 +15,7 @@ if __name__ == "__main__":
     print("=" * 50)
     
     uvicorn.run(
-        "app.main:app",
+        "app.main2:app",
         host=settings.api_host,
         port=settings.api_port,
         reload=settings.debug,

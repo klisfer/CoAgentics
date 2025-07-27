@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # API settings
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 8002
     api_prefix: str = "/api/v1"
     
     # Security
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     financial_data_api_key: Optional[str] = None
     
     # CORS settings
-    allowed_origins: List[str] = ["http://localhost:3000", "http://localhost:8080", "http://localhost:8501"]
+    allowed_origins: List[str] = ["http://localhost:3000", "http://localhost:8080", "http://localhost:8501", "https://coagentics-frontend-978710537953.us-central1.run.app", "*"]
     allowed_methods: List[str] = ["GET", "POST", "PUT", "DELETE"]
     allowed_headers: List[str] = ["*"]
     

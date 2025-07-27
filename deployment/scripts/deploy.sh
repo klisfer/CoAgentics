@@ -33,11 +33,8 @@ if ! command -v gcloud &> /dev/null; then
     exit 1
 fi
 
-# Check if docker is installed
-if ! command -v docker &> /dev/null; then
-    print_error "Docker is not installed. Please install it first."
-    exit 1
-fi
+# Note: Docker is not required locally for GCP Cloud Build deployment
+# Docker builds happen in the cloud
 
 # Get project ID
 PROJECT_ID=$(gcloud config get-value project)
@@ -56,9 +53,7 @@ gcloud services enable \
     containerregistry.googleapis.com \
     artifactregistry.googleapis.com
 
-# Configure Docker to use gcloud as a credential helper
-print_status "Configuring Docker authentication..."
-gcloud auth configure-docker
+# Note: Docker authentication not needed for Cloud Build deployment
 
 # Set build timeout
 export CLOUDBUILD_TIMEOUT=1200s

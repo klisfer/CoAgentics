@@ -7,37 +7,64 @@ WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --only=production && npm cache clean --force
 
-# Rebuild the source code only when needed
+# Development dependencies for building
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install all dependencies including dev dependencies for building
+RUN npm ci
+
+# Copy source code
 COPY . .
 
-# Build the app
+# Set environment for build
+ENV NODE_ENV=production
+
+# Build the application
 RUN npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
 
+# Set production environment
 ENV NODE_ENV=production
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/public ./public
+# Create app directory and set permissions
+RUN mkdir .next && chown nextjs:nodejs .next
 
-# Automatically leverage output traces to reduce image size
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copy built application
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 
+# Copy package.json for scripts
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+
+# Install only production dependencies
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+
+# Switch to non-root user
 USER nextjs
 
+# Expose the port
 EXPOSE 3000
 
+# Set runtime environment
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"] 
+# Add health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/').on('error', () => process.exit(1))" || exit 1
+
+# Run the application
+CMD ["npm", "start"] 

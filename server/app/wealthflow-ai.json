@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "wealthflow-ai",
+  "private_key_id": "427bb8830e7d3f60677c9e5c20696c59388d2230",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDBMoc44ab0JmNx\nJxObBbl0BHYqvUWJYPyv7vXYy37EWuchwJl8ymZQn0P6/uvWBqAyjrTOJf/hK7aD\nN6J5mNCN0ZH1/y+zszP0f1/laGabkiv4MGCRAM6I7O55Z1yYsmJyA1yzAJKEUkQS\nj+dRAHkKfsixR46ZU/pVXU0fUaeBq1hpaD39wedsTM7/L9UewOh0WA4vXTWs9efW\nYAOCXGICsxJ9gU+wRE7Wy8Atz7wpiRDW+8jZT5ERpMfJz7uFJl+40ki+22yOzKzj\nB7qEO6yZ+rgHBhKTGSh9n3uef8SsxEiu16g29y1eDE50wlCaie/1Xf5zxyQ8BJKW\n+VPB3hQnAgMBAAECggEAEsEu80ykgmr/mEps0s25dRPBzOBW0cFChmmyH/uRMMqK\nSXKC8+RKDmWHmeQJTNuTzZSg5Ko3rsopi49pDFjTVhEUFEdTgCRTVNbQnlqGK3AD\nKLK5jRoA8rXdaJeqG4Clod/FrfLORl4eEZc6o1hiZ6xrGxqRMz09ve+yvumUUzf9\ns2smqvzGyf/6X1A/V/S2J7EgLMwXkTa8dxQWBQIWWbofnFWumQ1f9qqJc2piGrl7\nRg9RT9S7fpVsPuYTCHC9oEx6dPWMwR3xqfNrlkD31y02AwME54K4w4dLZF8jbUWk\n62IpTznf2KezotZ46Huh+YCoJftqKz3wZKnU92dQ4QKBgQDuOWu5JmL/Npp5AGrl\nsexKoWK/zgHBxXS/dEVOkoivV5SXItdvKMB/2YZNcAeQkq7THJEs+pdlIiQYE+1a\neu3MHoXCv+BagRWRyxC3Y8fQzOEhauRQja9REYyHuZsM8Cs52X5ZZd/KCQnezXBK\na4UMD6Ubj5TC9+pkmoNY2qZSKQKBgQDPnP/lP4gKTRW2CKSjH7sFJDB2dhwaHnVr\nwCkmC20x6U8ylXDcedWxsZobLvDAG1Xvha3+fVbmq/Hio9gpP4Gl1FG5XQ8e+9Iy\nCLYBNVq+51+3mMpxXGzO4aZZ33rlwOaM5pusmRyTb78QgdA5P6gAGXGtbaunapD6\nxyzrzdsdzwKBgAFkZoPDfKqfKBHy9az3+DiLbudODeaS/9aqmEkYRCI6Mc0cUAP/\nSfi1TbqgH/sxUEI9lX+cy0u1Al79ptJzi3Y463Ey6927iWO7uxJHTAClYd9vH3x1\nB4RCxP56EDToJmiFI97j4IXuvZcGvlRBApsKcF2T3juxdTY3TPM0++nZAoGAV8NO\niWJp57DeVK0iq7JmJK4/rlQPXRszF/GLc4GxD0BJMmDp7Mm0BAHH22Xkb9Eearpf\n6wyhB7H39o68efNWovs18N3d3oMlP/FevvQHAFxeogX8zh78ABhzcdp+4VDCJR33\nAOdYpRq/8gJuO0Ulh6U54M5Tmdn6n4hC/QtwbRECgYA96L26c3PH21088MmyzUp2\nx+mYR3MBHHgn463E2NZhyeLwKKtnqVqSWQqSN2dTqI9TwPuNerZ9bt0FEsaqX9XJ\nyzG/iXhkw69JBgQpNN5wpZw37lkIxtWxzotH41CM9+nBYdcRqU0q9mhHQJrCVY1U\nIPu3FKjpX2A2Zm5gT/W+zw==\n-----END PRIVATE KEY-----\n",
+  "client_email": "co-agentics@wealthflow-ai.iam.gserviceaccount.com",
+  "client_id": "102545948269813285258",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/co-agentics%40wealthflow-ai.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
